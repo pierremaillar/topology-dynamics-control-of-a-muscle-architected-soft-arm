@@ -8,10 +8,11 @@ from elastica.rigidbody import RigidBodyBase
 from elastica.memory_block import (
     MemoryBlockCosseratRod,
     MemoryBlockMuscularRod,
+    MemoryBlockRibbon1D,
     MemoryBlockRigidBody,
 )
 from elastica._elastica_numba._rod._muscular_rod import MuscularRod
-
+from elastica._elastica_numba._rod._ribbon1D import Ribbon1D
 
 def construct_memory_block_structures(systems):
     """
@@ -26,15 +27,22 @@ def construct_memory_block_structures(systems):
     _memory_blocks = []
     temp_list_for_cosserat_rod_systems = []
     temp_list_for_muscular_rod_systems = []
+    temp_list_for_ribbon1D_systems = []
     temp_list_for_rigid_body_systems = []
     temp_list_for_cosserat_rod_systems_idx = []
     temp_list_for_muscular_rod_systems_idx = []
+    temp_list_for_ribbon1D_systems_idx = []
     temp_list_for_rigid_body_systems_idx = []
 
     for system_idx, sys_to_be_added in enumerate(systems):
         if issubclass(sys_to_be_added.__class__, MuscularRod):
             temp_list_for_muscular_rod_systems.append(sys_to_be_added)
             temp_list_for_muscular_rod_systems_idx.append(system_idx)
+
+        if issubclass(sys_to_be_added.__class__, Ribbon1D):
+            temp_list_for_ribbon1D_systems.append(sys_to_be_added)
+            temp_list_for_ribbon1D_systems_idx.append(system_idx)
+
 
         # for all rods that are not a muscular rod
         elif issubclass(sys_to_be_added.__class__, RodBase):
@@ -72,7 +80,15 @@ def construct_memory_block_structures(systems):
                 temp_list_for_muscular_rod_systems_idx,
             )
         )
-
+        
+    if temp_list_for_ribbon1D_systems:
+        _memory_blocks.append(
+            MemoryBlockRibbon1D(
+                temp_list_for_ribbon1D_systems,
+                temp_list_for_ribbon1D_systems_idx,
+            )
+        )
+        
     if temp_list_for_rigid_body_systems:
         _memory_blocks.append(
             MemoryBlockRigidBody(

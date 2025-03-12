@@ -873,3 +873,459 @@ def allocate_ring_rod(
         args,
         dict(kwargs, ring_rod_flag=True),
     )
+def allocate_ribbon(
+    n_elements,
+    start,
+    direction,
+    normal,
+    base_length,
+    base_thickness,
+    base_width,
+    density,
+    nu,
+    youngs_modulus,
+    poisson_ratio,
+    alpha_c = 12.0,
+    *args,
+    **kwargs
+):
+    """
+    This function takes the necessary and optional arguments to construct a ribbon. Default is straight ribbon, but with
+    correct parameters non straight ribbons can be set as well.
+
+    Parameters
+    ----------
+    n_elements : float
+    start : numpy.ndarray
+        1D (dim, ) array containing data with 'float' type. Start position of the ribbon's centerline.
+    direction :  numpy.ndarray
+        1D (dim, ) array containing data with 'float' type. Direction of the ribbon's centerline.
+    normal : numpy.ndarray
+        1D (dim, ) array containing data with 'float' type. Normal of the ribbon's centerline.
+    base_length : float
+        Initial length of the ribbon.
+    base_thickness : float or numpy.ndarray
+        Float or 1D (n_elem, ) array containing data with 'float' type. thickness of the ribbon.
+    base_width : float or numpy.ndarray
+        Float or 1D (n_elem, ) array containing data with 'float' type. width of the ribbon.
+    density : float or numpy.ndarray
+        Float or 1D (n_elem, ) array containing data with 'float' type. Density of the ribbon.
+    nu : float or numpy.ndarray
+        Float or 1D (n_elem, ) array containing data with 'float' type. Dissipation constant of the ribbon. This is by
+        default force and torque dissipation constant. If user wants to define different values for torque dissipation
+        constant, send  it in kwargs `nu_for_torques`.
+    youngs_modulus : float
+        Young's modulus of the ribbon.
+    poisson_ratio : float
+        Poisson ratio of the ribbon. Poisson ratio is only used to compute shear modulus.
+    alpha_c : float
+        Constant for rectangular cross-section. (assuming Timoshenko beam theory)
+    args
+    kwargs
+
+    Returns
+    -------
+
+    """
+
+    # sanity checks here
+    assert n_elements > 1
+    assert base_length > Tolerance.atol()
+    assert np.sqrt(np.dot(normal, normal)) > Tolerance.atol()
+    assert np.sqrt(np.dot(direction, direction)) > Tolerance.atol()
+
+    # Set the position array
+    position = np.zeros((MaxDimension.value(), n_elements + 1))
+    # check if position is in kwargs, if it is use user defined position otherwise generate position
+    if kwargs.__contains__("position"):
+        position_temp = np.array(kwargs["position"])
+
+        # Check the shape of the input position
+        assert position_temp.shape == (MaxDimension.value(), n_elements + 1), (
+            "Given position  shape is not correct, it should be "
+            + str(position.shape)
+            + " but instead "
+            + str(position_temp.shape)
+        )
+        # Check if the start position of the rod and first entry of position array are the same
+        assert_allclose(
+            position_temp[..., 0],
+            start,
+            atol=Tolerance.atol(),
+            err_msg=str(
+                "First entry of position" + " (" + str(position_temp[..., 0]) + " ) "
+                " is different than start " + " (" + str(start) + " ) "
+            ),
+        )
+        position = position_temp.copy()
+
+    else:
+        end = start + direction * base_length
+        for i in range(0, 3):
+            position[i, ...] = np.linspace(start[i], end[i], n_elements + 1)
+
+    # Compute rest lengths and tangents
+    position_diff = position[..., 1:] - position[..., :-1]
+    rest_lengths = _batch_norm(position_diff)
+    tangents = position_diff / rest_lengths
+    normal /= np.linalg.norm(normal)
+
+    # Set the directors matrix
+    directors = np.zeros((MaxDimension.value(), MaxDimension.value(), n_elements))
+    # check if directors is in kwargs, if it use user defined directors otherwise generate directors
+    if kwargs.__contains__("directors"):
+        directors_temp = np.array(kwargs["directors"])
+
+        # Check the shape of input directors
+        assert directors_temp.shape == (
+            MaxDimension.value(),
+            MaxDimension.value(),
+            n_elements,
+        ), (
+            " Given directors shape is not correct, it should be "
+            + str(directors.shape)
+            + " but instead "
+            + str(directors_temp.shape)
+        )
+
+        # Check if d1, d2, d3 are unit vectors
+        d1 = directors_temp[0, ...]
+        d2 = directors_temp[1, ...]
+        d3 = directors_temp[2, ...]
+        assert_allclose(
+            _batch_norm(d1),
+            np.ones((n_elements)),
+            atol=Tolerance.atol(),
+            err_msg=(" d1 vector of input director matrix is not unit vector "),
+        )
+        assert_allclose(
+            _batch_norm(d2),
+            np.ones((n_elements)),
+            atol=Tolerance.atol(),
+            err_msg=(" d2 vector of input director matrix is not unit vector "),
+        )
+        assert_allclose(
+            _batch_norm(d3),
+            np.ones((n_elements)),
+            atol=Tolerance.atol(),
+            err_msg=(" d3 vector of input director matrix is not unit vector "),
+        )
+
+        # Check if d3xd1 = d2
+        assert_allclose(
+            _batch_cross(d3, d1),
+            d2,
+            atol=Tolerance.atol(),
+            err_msg=(" d3 x d1 != d1 of input director matrix"),
+        )
+
+        # Check if computed tangents from position is the same with d3
+        assert_allclose(
+            tangents,
+            d3,
+            atol=Tolerance.atol(),
+            err_msg=" Tangent vector computed using node positions is different than d3 vector of input directors",
+        )
+
+        directors[:] = directors_temp[:]
+
+    else:
+        # Construct directors using tangents and normal
+        normal_collection = np.repeat(normal[:, np.newaxis], n_elements, axis=1)
+        # Check if rod normal and rod tangent are perpendicular to each other otherwise
+        # directors will be wrong!!
+        assert_allclose(
+            _batch_dot(normal_collection, tangents),
+            0,
+            atol=Tolerance.atol(),
+            err_msg=(" Rod normal and tangent are not perpendicular to each other!"),
+        )
+        directors[0, ...] = normal_collection
+        directors[1, ...] = _batch_cross(tangents, normal_collection)
+        directors[2, ...] = tangents
+
+    # Set thickness array
+    thickness = np.zeros((n_elements))
+    # Check if the user input thickness is valid
+    thickness_temp = np.array(base_thickness)
+    assert thickness_temp.ndim < 2, (
+        "Input thickness shape is not correct "
+        + str(thickness_temp.shape)
+        + " It should be "
+        + str(thickness.shape)
+        + " or  single floating number "
+    )
+    thickness[:] = thickness_temp
+    # Check if the elements of thickness are greater than tolerance
+    for k in range(n_elements):
+        assert thickness[k] > Tolerance.atol(), (
+            "Thickness has to be greater than 0" + " Check you thickness input!"
+        )
+
+    # Set width array
+    width = np.zeros((n_elements))
+    # Check if the user input width is valid
+    width_temp = np.array(base_width)
+    assert width_temp.ndim < 2, (
+        "Input width shape is not correct "
+        + str(width_temp.shape)
+        + " It should be "
+        + str(width.shape)
+        + " or  single floating number "
+    )
+    width[:] = width_temp
+    # Check if the elements of width are greater than tolerance
+    for k in range(n_elements):
+        assert width[k] > Tolerance.atol(), (
+            "Width has to be greater than 0" + " Check you width input!"
+        )
+        
+    # Set density array
+    density_array = np.zeros((n_elements))
+    # Check if the user input density is valid
+    density_temp = np.array(density)
+    assert density_temp.ndim < 2, (
+        "Input density shape is not correct "
+        + str(density_temp.shape)
+        + " It should be "
+        + str(density_array.shape)
+        + " or  single floating number "
+    )
+    density_array[:] = density_temp
+    # Check if the elements of density are greater than tolerance
+    for k in range(n_elements):
+        assert density_array[k] > Tolerance.atol(), (
+            " Density has to be greater than 0" + " Check you density input!"
+        )
+
+    # Second moment of inertia
+    A0 = width*thickness
+    I0_1 = width*thickness**3/12
+    I0_2 = thickness**3*width/12
+    I0_3 = I0_1 + I0_2
+    I0 = np.array([I0_1, I0_2, I0_3]).transpose()
+    # Mass second moment of inertia for disk cross-section
+    mass_second_moment_of_inertia = np.zeros(
+        (MaxDimension.value(), MaxDimension.value(), n_elements), np.float64
+    )
+
+    mass_second_moment_of_inertia_temp = np.einsum(
+        "ij,i->ij", I0, density * rest_lengths
+    )
+
+    for i in range(n_elements):
+        np.fill_diagonal(
+            mass_second_moment_of_inertia[..., i],
+            mass_second_moment_of_inertia_temp[i, :],
+        )
+    # sanity check of mass second moment of inertia
+    for k in range(n_elements):
+        for i in range(0, MaxDimension.value()):
+            assert mass_second_moment_of_inertia[i, i, k] > Tolerance.atol()
+            # if not mass_second_moment_of_inertia[i, i, k] > Tolerance.atol():
+            #     warn(
+            #         str(
+            #             "mass second of inertia "
+            #             + str(mass_second_moment_of_inertia[i, i, k])
+            #             + " smaller than tolerance "
+            #             + str(Tolerance.atol())
+            #         )
+            #     )
+
+    # Inverse of second moment of inertia
+    inv_mass_second_moment_of_inertia = np.zeros(
+        (MaxDimension.value(), MaxDimension.value(), n_elements)
+    )
+    for i in range(n_elements):
+        # Check rank of mass moment of inertia matrix to see if it is invertible
+        assert (
+            np.linalg.matrix_rank(mass_second_moment_of_inertia[..., i])
+            == MaxDimension.value()
+        )
+        inv_mass_second_moment_of_inertia[..., i] = np.linalg.inv(
+            mass_second_moment_of_inertia[..., i]
+        )
+
+    # Shear/Stretch matrix
+    shear_modulus = youngs_modulus / (poisson_ratio + 1.0)
+    shear_matrix = np.zeros(
+        (MaxDimension.value(), MaxDimension.value(), n_elements), np.float64
+    )
+    for i in range(n_elements):
+        np.fill_diagonal(
+            shear_matrix[..., i],
+            [
+                alpha_c * shear_modulus * A0[i],
+                alpha_c * shear_modulus * A0[i],
+                youngs_modulus * A0[i],
+            ],
+        )
+
+    # Bend_constants is an array that store precomputed constant used in the 1D ribbon constitutive equation 
+    bend_constants = np.zeros(
+        (MaxDimension.value(),MaxDimension.value(), n_elements), np.float64
+    )
+    for i in range(n_elements):
+        bend_constants[:, :, i] = np.array([[0.5 * youngs_modulus * width[i] * thickness[i],
+            (1.0 / 12) * youngs_modulus * width[i]**3 * thickness[i],
+            (1.0 / 12) * youngs_modulus * width[i] * thickness[i]**3],
+            [(1.0 / 12) * youngs_modulus * width[i] * thickness[i]**3 / (1 + poisson_ratio),
+            0.25 * youngs_modulus * width[i]**5 * thickness[i],
+            (1.0 / 24) * width[i]**2],
+            [poisson_ratio, ((12 * (1 - poisson_ratio**2))**0.5 * width[i]**2) / thickness[i], 1]])
+        
+    for k in range(n_elements):
+        for i in range(0, MaxDimension.value()):
+            assert bend_constants[i, i, k] > Tolerance.atol()
+            
+    # Compute bend matrix in Voronoi Domain
+    #bend_matrix = (
+    #    bend_matrix[..., 1:] * rest_lengths[1:]
+   #     + bend_matrix[..., :-1] * rest_lengths[0:-1]
+    #) / (rest_lengths[1:] + rest_lengths[:-1])
+
+    # Compute volume of elements
+    volume = thickness * width * rest_lengths
+
+    # Compute mass of elements
+    mass = np.zeros(n_elements + 1)
+    mass[:-1] += 0.5 * density * volume
+    mass[1:] += 0.5 * density * volume
+
+    # Set dissipation constant or nu array
+    dissipation_constant_for_forces = np.zeros((n_elements))
+    # Check if the user input nu is valid
+    nu_temp = np.array(nu)
+    assert nu_temp.ndim < 2, (
+        "Input dissipation constant(nu) for forces shape is not correct "
+        + str(nu_temp.shape)
+        + " It should be "
+        + str(dissipation_constant_for_forces.shape)
+        + " or  single floating number "
+    )
+    dissipation_constant_for_forces[:] = nu
+    # Check if the elements of dissipation constant greater than tolerance
+    for k in range(n_elements):
+        assert dissipation_constant_for_forces[k] >= 0.0, (
+            " Dissipation constant has to be equal or greater than 0 "
+            + " Check your dissipation constant(nu) input!"
+        )
+
+    dissipation_constant_for_torques = np.zeros((n_elements))
+    if kwargs.__contains__("nu_for_torques"):
+        temp_nu_for_torques = np.array(kwargs["nu_for_torques"])
+        assert temp_nu_for_torques.ndim < 2, (
+            "Input dissipation constant(nu) for torques shape is not correct "
+            + str(temp_nu_for_torques.shape)
+            + " It should be "
+            + str(dissipation_constant_for_torques.shape)
+            + " or  single floating number "
+        )
+        dissipation_constant_for_torques[:] = temp_nu_for_torques
+
+    else:
+        dissipation_constant_for_torques[:] = dissipation_constant_for_forces
+
+    # Generate rest sigma and rest kappa, use user input if defined
+    # set rest strains and curvature to be  zero at start
+    # if found in kwargs modify (say for curved or twisted ribbon)
+    rest_sigma = np.zeros((MaxDimension.value(), n_elements))
+    if kwargs.__contains__("rest_sigma"):
+        temp_rest_sigma = np.array(kwargs["rest_sigma"])
+        assert temp_rest_sigma.shape == rest_sigma.shape, (
+            "Input rest sigma shape is not correct "
+            + str(temp_rest_sigma.shape)
+            + " It should be "
+            + str(rest_sigma.shape)
+        )
+        rest_sigma[:] = temp_rest_sigma
+
+    rest_kappa = np.zeros((MaxDimension.value(), n_elements - 1))
+    if kwargs.__contains__("rest_kappa"):
+        temp_rest_kappa = np.array(kwargs["rest_kappa"])
+        assert temp_rest_kappa.shape == rest_kappa.shape, (
+            "Input rest kappa shape is not correct "
+            + str(temp_rest_kappa.shape)
+            + " It should be "
+            + str(rest_kappa.shape)
+        )
+        rest_kappa[:] = temp_rest_kappa
+
+    # Compute rest voronoi length
+    rest_voronoi_lengths = 0.5 * (rest_lengths[1:] + rest_lengths[:-1])
+
+    # Allocate arrays for Cosserat Rod equations
+    velocities = np.zeros((MaxDimension.value(), n_elements + 1))
+    omegas = np.zeros((MaxDimension.value(), n_elements))
+    accelerations = 0.0 * velocities
+    angular_accelerations = 0.0 * omegas
+
+    internal_forces = 0.0 * accelerations
+    internal_torques = 0.0 * angular_accelerations
+
+    external_forces = 0.0 * accelerations
+    external_torques = 0.0 * angular_accelerations
+
+    lengths = np.zeros((n_elements))
+    tangents = np.zeros((3, n_elements))
+
+    dilatation = np.zeros((n_elements))
+    voronoi_dilatation = np.zeros((n_elements - 1))
+    dilatation_rate = np.zeros((n_elements))
+
+    sigma = np.zeros((3, n_elements))
+    kappa = np.zeros((3, n_elements - 1))
+
+    internal_stress = np.zeros((3, n_elements))
+    internal_couple = np.zeros((3, n_elements - 1))
+
+    damping_forces = np.zeros((3, n_elements + 1))
+    damping_torques = np.zeros((3, n_elements))
+    
+    phi = np.zeros((n_elements))
+    phi_p = np.zeros((n_elements))
+
+    return (
+        n_elements,
+        position,
+        velocities,
+        omegas,
+        accelerations,
+        angular_accelerations,
+        directors,
+        thickness,
+        width,
+        mass_second_moment_of_inertia,
+        inv_mass_second_moment_of_inertia,
+        shear_matrix,
+        bend_constants,
+        density_array,
+        volume,
+        mass,
+        dissipation_constant_for_forces,
+        dissipation_constant_for_torques,
+        internal_forces,
+        internal_torques,
+        external_forces,
+        external_torques,
+        lengths,
+        rest_lengths,
+        tangents,
+        dilatation,
+        dilatation_rate,
+        voronoi_dilatation,
+        rest_voronoi_lengths,
+        sigma,
+        kappa,
+        rest_sigma,
+        rest_kappa,
+        internal_stress,
+        internal_couple,
+        damping_forces,
+        damping_torques,
+        phi,
+        phi_p,
+        args,
+        kwargs,
+    )
+

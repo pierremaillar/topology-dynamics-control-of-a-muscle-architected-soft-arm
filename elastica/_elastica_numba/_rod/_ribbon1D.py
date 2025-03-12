@@ -1,5 +1,6 @@
-__doc__ = """ Cosserat rod equations implementation for Elastica Numba Implementation"""
-__all__ = ["CosseratRod"]
+__doc__ = """ Ribbon model equations implementation for Elastica Numpy/Numba implementation. The model keep the same kinematic relation as the rod model but consist of an adapted constitutive law to account for the "plate-like" behavior. The model is derived and detailed in: "A one-dimensional model for elastic ribbons: a little stretching makes a big difference " by Basile Audoly and Sebastien Neukirch"""
+
+__all__ = ["Ribbon1D"]
 import numpy as np
 import functools
 import numba
@@ -11,7 +12,7 @@ from elastica._elastica_numba._linalg import (
     _batch_matvec,
 )
 from elastica._elastica_numba._rotations import _inv_rotate
-from elastica.rod.factory_function import allocate, allocate_ring_rod
+from elastica.rod.factory_function import allocate_ribbon
 from elastica._calculus import (
     quadrature_kernel_for_block_structure,
     difference_kernel_for_block_structure,
@@ -19,6 +20,7 @@ from elastica._calculus import (
     _average,
 )
 from elastica._elastica_numba._interaction import node_to_element_pos_or_vel
+from elastica.utils import Tolerance
 
 position_difference_kernel = _difference
 position_average = _average
@@ -41,12 +43,15 @@ def _compute_sigma_kappa_for_blockstructure(memory_block):
     -------
 
     """
+
+
     _compute_shear_stretch_strains(
         memory_block.position_collection,
         memory_block.volume,
         memory_block.lengths,
         memory_block.tangents,
-        memory_block.radius,
+        memory_block.width,
+        memory_block.thickness,
         memory_block.rest_lengths,
         memory_block.rest_voronoi_lengths,
         memory_block.dilatation,
@@ -63,7 +68,7 @@ def _compute_sigma_kappa_for_blockstructure(memory_block):
     )
 
 
-class CosseratRod(RodBase):
+class Ribbon1D(RodBase):
     def __init__(
         self,
         n_elements,
@@ -73,11 +78,12 @@ class CosseratRod(RodBase):
         acceleration,
         angular_acceleration,
         directors,
-        radius,
+        thickness,
+        width,
         mass_second_moment_of_inertia,
         inv_mass_second_moment_of_inertia,
         shear_matrix,
-        bend_matrix,
+        bend_constants,
         density,
         volume,
         mass,
@@ -102,6 +108,8 @@ class CosseratRod(RodBase):
         internal_couple,
         damping_forces,
         damping_torques,
+        phi,
+        phi_p,
         args,
         kwargs,
     ):
@@ -112,11 +120,12 @@ class CosseratRod(RodBase):
         self.acceleration_collection = acceleration
         self.alpha_collection = angular_acceleration
         self.director_collection = directors
-        self.radius = radius
+        self.thickness = thickness
+        self.width = width
         self.mass_second_moment_of_inertia = mass_second_moment_of_inertia
         self.inv_mass_second_moment_of_inertia = inv_mass_second_moment_of_inertia
         self.shear_matrix = shear_matrix
-        self.bend_matrix = bend_matrix
+        self.bend_constants = bend_constants
         self.density = density
         self.volume = volume
         self.mass = mass
@@ -141,42 +150,52 @@ class CosseratRod(RodBase):
         self.internal_couple = internal_couple
         self.damping_forces = damping_forces
         self.damping_torques = damping_torques
+        self.phi = phi
+        self.phi_p = phi_p
 
-        # If n_elems_with_boundary defined and passed with kwargs, then this rod is ring and
-        # n_elems_with_boundary is a member of ring rod.
-        if kwargs.__contains__("ring_rod_flag"):
-            self.ring_rod_flag = kwargs.get("ring_rod_flag")
+
+        # rest base area
+        #self.rest_area = self.width * self.thickness
+
+        # if kwargs.__contains__("stretch_optimal"):
+        #     self.stretch_optimal = np.ones((n_elements)) * kwargs.get("stretch_optimal")
+        # else:
+        #     # raise AttributeError("Did you forget to input stretch_optimal in kwargs ?")
+        #     self.stretch_optimal = np.ones((n_elements))
+
 
     @classmethod
-    def straight_rod(
+    def straight_ribbon(
         cls,
         n_elements,
         start,
         direction,
         normal,
         base_length,
-        base_radius,
+        base_thickness,
+        base_width,
         density,
         nu,
         youngs_modulus,
         poisson_ratio,
-        alpha_c=4.0 / 3.0,
+        alpha_c=12.0,
         *args,
         **kwargs,
     ):
         (
             n_elements,
             position,
-            velocities,
-            omegas,
-            accelerations,
-            angular_accelerations,
+            velocity,
+            omega,
+            acceleration,
+            angular_acceleration,
             directors,
-            radius,
+            thickness,
+            width,
             mass_second_moment_of_inertia,
             inv_mass_second_moment_of_inertia,
             shear_matrix,
-            bend_matrix,
+            bend_constants,
             density,
             volume,
             mass,
@@ -201,20 +220,23 @@ class CosseratRod(RodBase):
             internal_couple,
             damping_forces,
             damping_torques,
+            phi,
+            phi_p,
             args,
             kwargs,
-        ) = allocate(
+        ) = allocate_ribbon(
             n_elements,
             start,
             direction,
             normal,
             base_length,
-            base_radius,
+            base_thickness,
+            base_width,
             density,
             nu,
             youngs_modulus,
             poisson_ratio,
-            alpha_c=4.0 / 3.0,
+            alpha_c=12.0,
             *args,
             **kwargs,
         )
@@ -222,16 +244,17 @@ class CosseratRod(RodBase):
         return cls(
             n_elements,
             position,
-            velocities,
-            omegas,
-            accelerations,
-            angular_accelerations,
+            velocity,
+            omega,
+            acceleration,
+            angular_acceleration,
             directors,
-            radius,
+            thickness,
+            width,
             mass_second_moment_of_inertia,
             inv_mass_second_moment_of_inertia,
             shear_matrix,
-            bend_matrix,
+            bend_constants,
             density,
             volume,
             mass,
@@ -256,122 +279,12 @@ class CosseratRod(RodBase):
             internal_couple,
             damping_forces,
             damping_torques,
+            phi,
+            phi_p,
             args,
             kwargs,
         )
 
-    @classmethod
-    def ring_rod(
-        cls,
-        n_elements,
-        start,
-        direction,
-        normal,
-        base_length,
-        base_radius,
-        density,
-        nu,
-        youngs_modulus,
-        poisson_ratio,
-        alpha_c=4.0 / 3.0,
-        *args,
-        **kwargs,
-    ):
-        (
-            n_elements,
-            position,
-            velocities,
-            omegas,
-            accelerations,
-            angular_accelerations,
-            directors,
-            radius,
-            mass_second_moment_of_inertia,
-            inv_mass_second_moment_of_inertia,
-            shear_matrix,
-            bend_matrix,
-            density,
-            volume,
-            mass,
-            dissipation_constant_for_forces,
-            dissipation_constant_for_torques,
-            internal_forces,
-            internal_torques,
-            external_forces,
-            external_torques,
-            lengths,
-            rest_lengths,
-            tangents,
-            dilatation,
-            dilatation_rate,
-            voronoi_dilatation,
-            rest_voronoi_lengths,
-            sigma,
-            kappa,
-            rest_sigma,
-            rest_kappa,
-            internal_stress,
-            internal_couple,
-            damping_forces,
-            damping_torques,
-            args,
-            kwargs,
-        ) = allocate_ring_rod(
-            n_elements,
-            start,
-            direction,
-            normal,
-            base_length,
-            base_radius,
-            density,
-            nu,
-            youngs_modulus,
-            poisson_ratio,
-            alpha_c=4.0 / 3.0,
-            *args,
-            **kwargs,
-        )
-
-        return cls(
-            n_elements,
-            position,
-            velocities,
-            omegas,
-            accelerations,
-            angular_accelerations,
-            directors,
-            radius,
-            mass_second_moment_of_inertia,
-            inv_mass_second_moment_of_inertia,
-            shear_matrix,
-            bend_matrix,
-            density,
-            volume,
-            mass,
-            dissipation_constant_for_forces,
-            dissipation_constant_for_torques,
-            internal_forces,
-            internal_torques,
-            external_forces,
-            external_torques,
-            lengths,
-            rest_lengths,
-            tangents,
-            dilatation,
-            dilatation_rate,
-            voronoi_dilatation,
-            rest_voronoi_lengths,
-            sigma,
-            kappa,
-            rest_sigma,
-            rest_kappa,
-            internal_stress,
-            internal_couple,
-            damping_forces,
-            damping_torques,
-            args,
-            kwargs,
-        )
 
     def compute_internal_forces_and_torques(self, time):
         """
@@ -387,21 +300,28 @@ class CosseratRod(RodBase):
         -------
 
         """
-            
+
+        print("lengths.shape", self.lengths.shape)
+        print("tangents.shape",self.tangents.shape)
         _compute_internal_forces(
             self.position_collection,
             self.volume,
             self.lengths,
             self.tangents,
-            self.radius,
+            self.thickness,
+            self.width,
             self.rest_lengths,
             self.rest_voronoi_lengths,
             self.dilatation,
+            self.dilatation_rate,
             self.voronoi_dilatation,
             self.director_collection,
             self.sigma,
             self.rest_sigma,
+            self.kappa,
+            self.rest_kappa,
             self.shear_matrix,
+            self.bend_constants,
             self.internal_stress,
             self.velocity_collection,
             self.dissipation_constant_for_forces,
@@ -409,6 +329,7 @@ class CosseratRod(RodBase):
             self.internal_forces,
             self.ghost_elems_idx,
         )
+
 
         _compute_internal_torques(
             self.position_collection,
@@ -418,7 +339,7 @@ class CosseratRod(RodBase):
             self.rest_lengths,
             self.director_collection,
             self.rest_voronoi_lengths,
-            self.bend_matrix,
+            self.bend_constants,
             self.rest_kappa,
             self.kappa,
             self.voronoi_dilatation,
@@ -431,7 +352,12 @@ class CosseratRod(RodBase):
             self.dissipation_constant_for_torques,
             self.damping_torques,
             self.internal_torques,
-            self.ghost_voronoi_idx,
+            self.ghost_elems_idx,
+            self.volume,
+            self.sigma,
+            self.rest_sigma,
+            self.phi,
+            self.phi_p,
         )
 
     # Interface to time-stepper mixins (Symplectic, Explicit), which calls this method
@@ -497,15 +423,8 @@ class CosseratRod(RodBase):
 
     def compute_bending_energy(self):
         kappa_diff = self.kappa - self.rest_kappa
-        bending_internal_torques = _batch_matvec(self.bend_matrix, kappa_diff)
 
-        return (
-            0.5
-            * (
-                _batch_dot(kappa_diff, bending_internal_torques)
-                * self.rest_voronoi_lengths
-            ).sum()
-        )
+        return 0
 
     def compute_shear_energy(self):
         sigma_diff = self.sigma - self.rest_sigma
@@ -519,7 +438,7 @@ class CosseratRod(RodBase):
 
 @numba.njit(cache=True)
 def _compute_geometry_from_state(
-    position_collection, volume, lengths, tangents, radius
+    position_collection, volume, lengths, tangents, thickness, width
 ):
     """
     Returns
@@ -540,7 +459,8 @@ def _compute_geometry_from_state(
         tangents[1, k] = position_diff[1, k] / lengths[k]
         tangents[2, k] = position_diff[2, k] / lengths[k]
         # resize based on volume conservation
-        radius[k] = np.sqrt(volume[k] / lengths[k] / np.pi)
+        # Here we assume that the deformation du to volumne conservation will strech only the thickness but conserve the width !
+        thickness[k] = np.sqrt(volume[k] / lengths[k] / width[k])
 
 
 @numba.njit(cache=True)
@@ -549,7 +469,8 @@ def _compute_all_dilatations(
     volume,
     lengths,
     tangents,
-    radius,
+    thickness,
+    width,
     dilatation,
     rest_lengths,
     rest_voronoi_lengths,
@@ -561,17 +482,17 @@ def _compute_all_dilatations(
     -------
 
     """
-    _compute_geometry_from_state(position_collection, volume, lengths, tangents, radius)
+    _compute_geometry_from_state(position_collection, volume, lengths, tangents, thickness, width)
     # Caveat : Needs already set rest_lengths and rest voronoi domain lengths
     # Put in initialization
     for k in range(lengths.shape[0]):
         dilatation[k] = lengths[k] / rest_lengths[k]
 
-    # Cmopute eq (3.4) from 2018 RSOS paper
+    # Compute eq (3.4) from 2018 RSOS paper
     # Note : we can use trapezoidal kernel, but it has padding and will be slower
     voronoi_lengths = position_average(lengths)
 
-    # Cmopute eq (3.45 from 2018 RSOS paper
+    # Compute eq (3.45 from 2018 RSOS paper
     for k in range(voronoi_lengths.shape[0]):
         voronoi_dilatation[k] = voronoi_lengths[k] / rest_voronoi_lengths[k]
 
@@ -612,7 +533,8 @@ def _compute_shear_stretch_strains(
     volume,
     lengths,
     tangents,
-    radius,
+    thickness,
+    width,
     rest_lengths,
     rest_voronoi_lengths,
     dilatation,
@@ -620,13 +542,15 @@ def _compute_shear_stretch_strains(
     director_collection,
     sigma,
 ):
+
     # Quick trick : Instead of evaliation Q(et-d^3), use property that Q*d3 = (0,0,1), a constant
     _compute_all_dilatations(
         position_collection,
         volume,
         lengths,
         tangents,
-        radius,
+        thickness,
+        width,
         dilatation,
         rest_lengths,
         rest_voronoi_lengths,
@@ -637,38 +561,50 @@ def _compute_shear_stretch_strains(
     sigma[:] = dilatation * _batch_matvec(director_collection, tangents) - z_vector
 
 
+
 @numba.njit(cache=True)
 def _compute_internal_shear_stretch_stresses_from_model(
     position_collection,
     volume,
     lengths,
     tangents,
-    radius,
+    thickness,
+    width,
     rest_lengths,
     rest_voronoi_lengths,
     dilatation,
+    dilatation_rate,
     voronoi_dilatation,
     director_collection,
     sigma,
     rest_sigma,
+    kappa,
+    rest_kappa,
     shear_matrix,
+    bend_constants,
     internal_stress,
 ):
     """
+    1D Constitutive model for a ribbon. For now, It is simply the strain follow the cosserat rod constitutive law.
+    Note: Is this right ? Does it holds if internal_stress[:] = 0 (only angular acc from curvatures)
+    
     Linear force functional
     Operates on
     S : (3,3,n) tensor and sigma (3,n)
-
+    
     Returns
     -------
-
+    
     """
+    
+    
     _compute_shear_stretch_strains(
         position_collection,
         volume,
-        lengths,
         tangents,
-        radius,
+        lengths,
+        thickness,
+        width,
         rest_lengths,
         rest_voronoi_lengths,
         dilatation,
@@ -676,7 +612,18 @@ def _compute_internal_shear_stretch_stresses_from_model(
         director_collection,
         sigma,
     )
+
+    #Note: Not sure this is efficient but is needed as kappa is compute on all voronoi domain (nbr of element - 1)
+    kappa_padded = np.hstack((kappa-rest_kappa, np.zeros((3, 1))))
+
+
+    #internal_stress[0,:] = shear_matrix[0,0,:]*(sigma[0,:]-rest_sigma[0,:])
+    #internal_stress[1,:] = shear_matrix[1,1,:]*(sigma[1,:]-rest_sigma[1,:])
+    #internal_stress[2,:] = 2*bend_constants[0,0]*((sigma[2,:]-rest_sigma[2,:])+bend_constants[1,2]*(kappa_padded[2,:])**2)
+
+        
     internal_stress[:] = _batch_matvec(shear_matrix, sigma - rest_sigma)
+
 
 
 @numba.njit(cache=True)
@@ -691,12 +638,18 @@ def _compute_bending_twist_strains(director_collection, rest_voronoi_lengths, ka
 
 @numba.njit(cache=True)
 def _compute_internal_bending_twist_stresses_from_model(
+    position_collection,
     director_collection,
     rest_voronoi_lengths,
     internal_couple,
-    bend_matrix,
+    bend_constants,
     kappa,
     rest_kappa,
+    volume,
+    sigma,
+    rest_sigma,
+    phi,
+    phi_p,
 ):
     """
     Linear force functional
@@ -711,15 +664,116 @@ def _compute_internal_bending_twist_stresses_from_model(
         director_collection, rest_voronoi_lengths, kappa
     )  # concept : needs to compute kappa
 
+    
+    _compute_phi_and_phiprime(bend_constants, kappa, phi, phi_p)
+
     blocksize = kappa.shape[1]
-    temp = np.empty((3, blocksize))
-    for i in range(3):
-        for k in range(blocksize):
-            temp[i, k] = kappa[i, k] - rest_kappa[i, k]
+    k2_temp = 0
+    k3_temp = 0
 
-    internal_couple[:] = _batch_matvec(bend_matrix, temp)
+    #Note: build for uniform ribbon (constant width, thickness, Youngs modulus)
+    [[A, B, C],[ D, E, F],[ poisson_ratio, OneOver_kStar,_]] = bend_constants[:,:,0]
+    
+    for k in range(blocksize):
+        k2_temp = kappa[1, k] - rest_kappa[1, k]
+        k3_temp = kappa[2, k] - rest_kappa[2, k]
 
+        #NOTE: Can be optimized if needed 
+        internal_couple[0, k] = 2*B*(kappa[0, k] - rest_kappa[0, k])
+        internal_couple[1, k] = (2*C*k2_temp + 4*E*(poisson_ratio*k2_temp**2+k3_temp**2)*poisson_ratio*phi[k]+E*(poisson_ratio*k2_temp**2+k3_temp**2)**2*phi_p[k]*OneOver_kStar)*20
+        internal_couple[2, k] = 2*A*((sigma[2,k]-rest_sigma[2,k])+F*k3_temp**2)+2*C*k3_temp+4*E*(poisson_ratio*k2_temp**2+k3_temp**2)*poisson_ratio*k3_temp*phi[k]
 
+@numba.njit(cache=True)
+def _compute_phi_and_phiprime(
+    bend_constants,
+    kappa,
+    phi,
+    phi_p,
+):
+    """
+    Compute phi(k2_star) and phi_p(k2_star) with respect to k2 following the piece-wise approximation 
+    from Audoly et al.: "A one-dimensional model for elastic ribbons: a little stretching makes a big difference."
+
+    Operates on
+    curvature kappa (3, n)
+
+    Parameters
+    ----------
+    bend_constants : array
+        Material and geometric constants.
+    kappa : array
+        Curvature tensor (3, n).
+    phi : array
+        Output array for phi values.
+    phi_p : array
+        Output array for phi_p values.
+
+    Returns
+    -------
+    None (modifies phi and phi_p in place)
+    """
+    kappa2b = kappa[1, :] / bend_constants[2, 1, 0]  # Ensure bend_constants[7, 0] is well-defined
+    kappa2b2 = kappa2b ** 2
+    kappa2b4 = kappa2b2 ** 2
+    abs_kappa2b = np.abs(kappa2b)
+    sgn_kappa2b = np.sign(kappa2b)
+
+    # Small kappa2b (|kappa2b| < 0.3)
+    mask_small = abs_kappa2b < 0.3
+    phi[mask_small] = (
+        0.002777777777777778
+        + (-5.5114638447971785e-6) * kappa2b2[mask_small]
+        + (1.1008092191954626e-8) * kappa2b4[mask_small]
+    )
+    phi_p[mask_small] = kappa2b[mask_small] * (
+        2 * (-5.5114638447971785e-6) + 4 * (1.1008092191954626e-8) * kappa2b2[mask_small]
+    )
+
+    # Large kappa2b (|kappa2b| > 1800)
+    mask_large = abs_kappa2b > 1800
+    sqrt_abs_kappa2b = np.sqrt(abs_kappa2b[mask_large])
+    phi[mask_large] = (-5.656854249492381) / (
+        sqrt_abs_kappa2b * kappa2b2[mask_large]
+    ) + 2 / kappa2b2[mask_large]
+    phi_p[mask_large] = (
+        -2.5
+        * sgn_kappa2b[mask_large]
+        * (-5.656854249492381)
+        / (kappa2b4[mask_large] * sqrt_abs_kappa2b)
+        - 4 / (kappa2b[mask_large] * kappa2b2[mask_large])
+    )
+
+    # Intermediate kappa2b (0.3 ≤ |kappa2b| ≤ 1800)
+    mask_mid = ~(mask_small | mask_large)
+    k_mid = kappa2b[mask_mid]
+    q = np.sqrt(np.abs(k_mid) / 2)
+    q2 = q**2
+    q3 = q * q2
+    q5, q6 = q2 * q3, q3**2
+
+    cosh_q, sinh_q = np.cosh(q), np.sinh(q)
+    cos_q, sin_q = np.cos(q), np.sin(q)
+
+    cosh_q2, cos_q2 = cosh_q**2, cos_q**2
+    cos_q3 = cos_q * cos_q2
+
+    sn_sum = sinh_q + sin_q
+    sn_sum2 = sn_sum**2
+
+    f0 = (0.5 * (-2 * cosh_q + 2 * cos_q + q * sn_sum)) / (q5 * sn_sum)
+    f1 = (
+        cosh_q2 * q
+        - cos_q2 * q
+        + 5 * cosh_q * sn_sum
+        - 5 * cos_q * sn_sum
+        - 3 * q * sn_sum2
+    ) / (q6 * sn_sum2)
+
+    phi[mask_mid] = f0
+    phi_p[mask_mid] = f1 * sgn_kappa2b[mask_mid] / (4 * q)
+    
+
+    
 @numba.njit(cache=True)
 def _compute_damping_forces(
     damping_forces,
@@ -753,15 +807,20 @@ def _compute_internal_forces(
     volume,
     lengths,
     tangents,
-    radius,
+    thickness,
+    width,
     rest_lengths,
     rest_voronoi_lengths,
     dilatation,
+    dilatation_rate,
     voronoi_dilatation,
     director_collection,
     sigma,
     rest_sigma,
+    kappa,
+    rest_kappa,
     shear_matrix,
+    bend_constants,
     internal_stress,
     velocity_collection,
     dissipation_constant_for_forces,
@@ -776,15 +835,20 @@ def _compute_internal_forces(
         volume,
         lengths,
         tangents,
-        radius,
+        thickness,
+        width,
         rest_lengths,
         rest_voronoi_lengths,
         dilatation,
+        dilatation_rate,
         voronoi_dilatation,
         director_collection,
         sigma,
         rest_sigma,
+        kappa,
+        rest_kappa,
         shear_matrix,
+        bend_constants,
         internal_stress,
     )
 
@@ -840,7 +904,7 @@ def _compute_internal_torques(
     rest_lengths,
     director_collection,
     rest_voronoi_lengths,
-    bend_matrix,
+    bend_constants,
     rest_kappa,
     kappa,
     voronoi_dilatation,
@@ -854,22 +918,33 @@ def _compute_internal_torques(
     damping_torques,
     internal_torques,
     ghost_voronoi_idx,
+    volume,
+    sigma,
+    rest_sigma,
+    phi,
+    phi_p,
 ):
     # Compute \tau_l and cache it using internal_couple
     # Be careful about usage though
     _compute_internal_bending_twist_stresses_from_model(
+        position_collection,
         director_collection,
         rest_voronoi_lengths,
         internal_couple,
-        bend_matrix,
+        bend_constants,
         kappa,
         rest_kappa,
+        volume,
+        sigma,
+        rest_sigma,
+        phi,
+        phi_p,
     )
-    # Compute dilatation rate when needed, dilatation itself is done before
-    # in internal_stresses
-    _compute_dilatation_rate(
-        position_collection, velocity_collection, lengths, rest_lengths, dilatation_rate
-    )
+    # # Compute dilatation rate when needed, dilatation itself is done before
+    # # in internal_stresses
+    # _compute_dilatation_rate(
+    #     position_collection, velocity_collection, lengths, rest_lengths, dilatation_rate
+    # )
 
     # FIXME: change memory overload instead for the below calls!
     voronoi_dilatation_inv_cube_cached = 1.0 / voronoi_dilatation**3
