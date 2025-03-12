@@ -74,7 +74,7 @@ class Tolerance:
         -------
         atol : library-wide set absolute tolerance for kernels
         """
-        return finfo(float64).eps * 1e4
+        return finfo(float64).eps * 1e1
 
     @staticmethod
     def rtol():

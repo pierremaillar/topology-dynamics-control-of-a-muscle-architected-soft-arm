@@ -387,7 +387,6 @@ class CosseratRod(RodBase):
         -------
 
         """
-            
         _compute_internal_forces(
             self.position_collection,
             self.volume,

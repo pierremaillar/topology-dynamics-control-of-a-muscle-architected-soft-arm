@@ -885,7 +885,7 @@ def allocate_ribbon(
     nu,
     youngs_modulus,
     poisson_ratio,
-    alpha_c = 12.0,
+    alpha_c = 4.0/3.0,
     *args,
     **kwargs
 ):
@@ -1178,11 +1178,27 @@ def allocate_ribbon(
         for i in range(0, MaxDimension.value()):
             assert bend_constants[i, i, k] > Tolerance.atol()
             
+    # Bend/Twist matrix
+    bend_matrix = np.zeros(
+        (MaxDimension.value(), MaxDimension.value(), n_elements), np.float64
+    )
+    for i in range(n_elements):
+        np.fill_diagonal(
+            bend_matrix[..., i],
+            [
+                youngs_modulus * I0_1[i],
+                youngs_modulus * I0_2[i],
+                shear_modulus * I0_3[i],
+            ],
+        )
+    for k in range(n_elements):
+        for i in range(0, MaxDimension.value()):
+            assert bend_matrix[i, i, k] > Tolerance.atol()
     # Compute bend matrix in Voronoi Domain
-    #bend_matrix = (
-    #    bend_matrix[..., 1:] * rest_lengths[1:]
-   #     + bend_matrix[..., :-1] * rest_lengths[0:-1]
-    #) / (rest_lengths[1:] + rest_lengths[:-1])
+    bend_matrix = (
+        bend_matrix[..., 1:] * rest_lengths[1:]
+        + bend_matrix[..., :-1] * rest_lengths[0:-1]
+    ) / (rest_lengths[1:] + rest_lengths[:-1])
 
     # Compute volume of elements
     volume = thickness * width * rest_lengths
@@ -1298,6 +1314,7 @@ def allocate_ribbon(
         mass_second_moment_of_inertia,
         inv_mass_second_moment_of_inertia,
         shear_matrix,
+        bend_matrix,
         bend_constants,
         density_array,
         volume,

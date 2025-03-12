@@ -1,6 +1,6 @@
-__doc__ = """ Ribbon model equations implementation for Elastica Numpy/Numba implementation. The model keep the same kinematic relation as the rod model but consist of an adapted constitutive law to account for the "plate-like" behavior. The model is derived and detailed in: "A one-dimensional model for elastic ribbons: a little stretching makes a big difference " by Basile Audoly and Sebastien Neukirch"""
+__doc__ = """ Ribbon model equations implementation for Elastica Numpy/Numba implementation. The model keep correspond to a linear rod-like ribbon model where only the centerline of the ribbon is modeled as a "squared" linear, shearable, extensible rod."""
 
-__all__ = ["Ribbon1D"]
+__all__ = ["linear_ribbon1D"]
 import numpy as np
 import functools
 import numba
@@ -68,7 +68,7 @@ def _compute_sigma_kappa_for_blockstructure(memory_block):
     )
 
 
-class Ribbon1D(RodBase):
+class LinearRibbon1D(RodBase):
     def __init__(
         self,
         n_elements,
@@ -83,7 +83,7 @@ class Ribbon1D(RodBase):
         mass_second_moment_of_inertia,
         inv_mass_second_moment_of_inertia,
         shear_matrix,
-        bend_constants,
+        bend_matrix,
         density,
         volume,
         mass,
@@ -125,7 +125,7 @@ class Ribbon1D(RodBase):
         self.mass_second_moment_of_inertia = mass_second_moment_of_inertia
         self.inv_mass_second_moment_of_inertia = inv_mass_second_moment_of_inertia
         self.shear_matrix = shear_matrix
-        self.bend_constants = bend_constants
+        self.bend_matrix = bend_matrix
         self.density = density
         self.volume = volume
         self.mass = mass
@@ -237,7 +237,7 @@ class Ribbon1D(RodBase):
             nu,
             youngs_modulus,
             poisson_ratio,
-            alpha_c=4.0/3.0,
+            alpha_c=12.0,
             *args,
             **kwargs,
         )
@@ -255,6 +255,7 @@ class Ribbon1D(RodBase):
             mass_second_moment_of_inertia,
             inv_mass_second_moment_of_inertia,
             shear_matrix,
+            bend_matrix,
             bend_constants,
             density,
             volume,
@@ -320,7 +321,7 @@ class Ribbon1D(RodBase):
             self.kappa,
             self.rest_kappa,
             self.shear_matrix,
-            self.bend_constants,
+            self.bend_matrix,
             self.internal_stress,
             self.velocity_collection,
             self.dissipation_constant_for_forces,
@@ -338,7 +339,7 @@ class Ribbon1D(RodBase):
             self.rest_lengths,
             self.director_collection,
             self.rest_voronoi_lengths,
-            self.bend_constants,
+            self.bend_matrix,
             self.rest_kappa,
             self.kappa,
             self.voronoi_dilatation,
@@ -581,12 +582,11 @@ def _compute_internal_shear_stretch_stresses_from_model(
     kappa,
     rest_kappa,
     shear_matrix,
-    bend_constants,
+    bend_matrix,
     internal_stress,
 ):
     """
-    1D Constitutive model for a ribbon. For now, It is simply the strain follow the cosserat rod constitutive law.
-    Note: Is this right ? Does it holds if internal_stress[:] = 0 (only angular acc from curvatures)
+    1D Constitutive model for a ribbon. The strain follow the cosserat rod constitutive laws.
     
     Linear force functional
     Operates on
@@ -612,17 +612,8 @@ def _compute_internal_shear_stretch_stresses_from_model(
         sigma,
     )
 
-    #Note: Not sure this is efficient and is not entirely true but is needed as kappa is compute between element
-    #and not for every element (nbr of element - 1)
-    kappa_padded = np.hstack((kappa-rest_kappa, np.zeros((3, 1))))
+    internal_stress[:] = _batch_matvec(shear_matrix, sigma - rest_sigma)
 
-
-    internal_stress[0,:] = shear_matrix[0,0,:]*(sigma[0,:]-rest_sigma[0,:])
-    internal_stress[1,:] = shear_matrix[1,1,:]*(sigma[1,:]-rest_sigma[1,:])
-    internal_stress[2,:] = (2*bend_constants[0,0]*((sigma[2,:]-rest_sigma[2,:])+bend_constants[1,2]*(kappa_padded[2,:])**2))
-
-        
-    #internal_stress[:] = _batch_matvec(shear_matrix, sigma - rest_sigma)
 
 
 
@@ -642,7 +633,7 @@ def _compute_internal_bending_twist_stresses_from_model(
     director_collection,
     rest_voronoi_lengths,
     internal_couple,
-    bend_constants,
+    bend_matrix,
     kappa,
     rest_kappa,
     volume,
@@ -664,115 +655,15 @@ def _compute_internal_bending_twist_stresses_from_model(
         director_collection, rest_voronoi_lengths, kappa
     )  # concept : needs to compute kappa
 
-    
-    _compute_phi_and_phiprime(bend_constants, kappa, phi, phi_p)
-
     blocksize = kappa.shape[1]
-    k2_temp = 0
-    k3_temp = 0
+    temp = np.empty((3, blocksize))
+    for i in range(3):
+        for k in range(blocksize):
+            temp[i, k] = kappa[i, k] - rest_kappa[i, k]
 
-    #Note: build for uniform ribbon (constant width, thickness, Youngs modulus)
-    [[A, B, C],[ D, E, F],[ poisson_ratio, OneOver_kStar,_]] = bend_constants[:,:,0]
+    internal_couple[:] = _batch_matvec(bend_matrix, temp)
+
     
-    for k in range(blocksize):
-        k2_temp = kappa[1, k] - rest_kappa[1, k]
-        k3_temp = kappa[2, k] - rest_kappa[2, k]
-
-        #NOTE: Can be optimized if needed 
-        internal_couple[0, k] = 2*B*(kappa[0, k] - rest_kappa[0, k])
-        internal_couple[1, k] = 2*C*k2_temp + 4*E*(poisson_ratio*k2_temp**2+k3_temp**2)*poisson_ratio*phi[k]*k2_temp+E*(poisson_ratio*k2_temp**2+k3_temp**2)**2*phi_p[k]*OneOver_kStar
-        internal_couple[2, k] = 2*A*((sigma[2,k]-rest_sigma[2,k])+F*k3_temp**2)*2*k3_temp+2*C*k3_temp+4*E*(poisson_ratio*k2_temp**2+k3_temp**2)*k3_temp*phi[k]
-
-@numba.njit(cache=True)
-def _compute_phi_and_phiprime(
-    bend_constants,
-    kappa,
-    phi,
-    phi_p,
-):
-    """
-    Compute phi(k2_star) and phi_p(k2_star) with respect to k2 following the piece-wise approximation 
-    from Audoly et al.: "A one-dimensional model for elastic ribbons: a little stretching makes a big difference."
-
-    Operates on
-    curvature kappa (3, n)
-
-    Parameters
-    ----------
-    bend_constants : array
-        Material and geometric constants.
-    kappa : array
-        Curvature tensor (3, n).
-    phi : array
-        Output array for phi values.
-    phi_p : array
-        Output array for phi_p values.
-
-    Returns
-    -------
-    None (modifies phi and phi_p in place)
-    """
-    kappa2b = kappa[1, :] / bend_constants[2, 1, 0]  # Ensure bend_constants[7, 0] is well-defined
-    kappa2b2 = kappa2b ** 2
-    kappa2b4 = kappa2b2 ** 2
-    abs_kappa2b = np.abs(kappa2b)
-    sgn_kappa2b = np.sign(kappa2b)
-
-    # Small kappa2b (|kappa2b| < 0.3)
-    mask_small = abs_kappa2b < 0.3
-    phi[mask_small] = (
-        0.002777777777777778
-        + (-5.5114638447971785e-6) * kappa2b2[mask_small]
-        + (1.1008092191954626e-8) * kappa2b4[mask_small]
-    )
-    phi_p[mask_small] = kappa2b[mask_small] * (
-        2 * (-5.5114638447971785e-6) + 4 * (1.1008092191954626e-8) * kappa2b2[mask_small]
-    )
-
-    # Large kappa2b (|kappa2b| > 1800)
-    mask_large = abs_kappa2b > 1800
-    sqrt_abs_kappa2b = np.sqrt(abs_kappa2b[mask_large])
-    phi[mask_large] = (-5.656854249492381) / (
-        sqrt_abs_kappa2b * kappa2b2[mask_large]
-    ) + 2 / kappa2b2[mask_large]
-    phi_p[mask_large] = (
-        -2.5
-        * sgn_kappa2b[mask_large]
-        * (-5.656854249492381)
-        / (kappa2b4[mask_large] * sqrt_abs_kappa2b)
-        - 4 / (kappa2b[mask_large] * kappa2b2[mask_large])
-    )
-
-    # Intermediate kappa2b (0.3 ≤ |kappa2b| ≤ 1800)
-    mask_mid = ~(mask_small | mask_large)
-    k_mid = kappa2b[mask_mid]
-    q = np.sqrt(np.abs(k_mid) / 2)
-    q2 = q**2
-    q3 = q * q2
-    q5, q6 = q2 * q3, q3**2
-
-    cosh_q, sinh_q = np.cosh(q), np.sinh(q)
-    cos_q, sin_q = np.cos(q), np.sin(q)
-
-    cosh_q2, cos_q2 = cosh_q**2, cos_q**2
-    cos_q3 = cos_q * cos_q2
-
-    sn_sum = sinh_q + sin_q
-    sn_sum2 = sn_sum**2
-
-    f0 = (0.5 * (-2 * cosh_q + 2 * cos_q + q * sn_sum)) / (q5 * sn_sum)
-    f1 = (
-        cosh_q2 * q
-        - cos_q2 * q
-        + 5 * cosh_q * sn_sum
-        - 5 * cos_q * sn_sum
-        - 3 * q * sn_sum2
-    ) / (q6 * sn_sum2)
-
-    phi[mask_mid] = f0
-    phi_p[mask_mid] = f1 * sgn_kappa2b[mask_mid] / (4 * q)
-    
-
     
 @numba.njit(cache=True)
 def _compute_damping_forces(
@@ -820,7 +711,7 @@ def _compute_internal_forces(
     kappa,
     rest_kappa,
     shear_matrix,
-    bend_constants,
+    bend_matrix,
     internal_stress,
     velocity_collection,
     dissipation_constant_for_forces,
@@ -848,7 +739,7 @@ def _compute_internal_forces(
         kappa,
         rest_kappa,
         shear_matrix,
-        bend_constants,
+        bend_matrix,
         internal_stress,
     )
 
@@ -904,7 +795,7 @@ def _compute_internal_torques(
     rest_lengths,
     director_collection,
     rest_voronoi_lengths,
-    bend_constants,
+    bend_matrix,
     rest_kappa,
     kappa,
     voronoi_dilatation,
@@ -931,7 +822,7 @@ def _compute_internal_torques(
         director_collection,
         rest_voronoi_lengths,
         internal_couple,
-        bend_constants,
+        bend_matrix,
         kappa,
         rest_kappa,
         volume,
