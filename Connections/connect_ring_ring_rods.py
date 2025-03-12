@@ -126,10 +126,10 @@ def get_ring_ring_connection_reference_index(rod_one, rod_two, n_straight_rods):
             (i * n_elem_skip + index_reference_opposite) % rod_one.n_elems
         )
 
-    index_connection = np.array(index_connection_list, dtype=np.int)
-    index_connection_opposite = np.array(index_connection_opposite_list, dtype=np.int)
-    index_reference = np.array(index_reference_list, dtype=np.int)
-    index_reference_opposite = np.array(index_reference_opposite_list, dtype=np.int)
+    index_connection = np.array(index_connection_list, dtype=np.int64)
+    index_connection_opposite = np.array(index_connection_opposite_list, dtype=np.int64)
+    index_reference = np.array(index_reference_list, dtype=np.int64)
+    index_reference_opposite = np.array(index_reference_opposite_list, dtype=np.int64)
 
     return (
         index_connection,
@@ -188,8 +188,8 @@ class OuterRingRingRodConnectionDifferentLevel(FreeJoint):
         index_one = copy.deepcopy(index_connection)
         index_two = copy.deepcopy(index_connection)
 
-        first_sys_idx_offset = np.array(kwargs["first_sys_idx_offset"], dtype=np.int)
-        second_sys_idx_offset = np.array(kwargs["second_sys_idx_offset"], dtype=np.int)
+        first_sys_idx_offset = np.array(kwargs["first_sys_idx_offset"], dtype=np.int64)
+        second_sys_idx_offset = np.array(kwargs["second_sys_idx_offset"], dtype=np.int64)
         for i in range(len(index_connection)):
             index_one[i] += first_sys_idx_offset[i]
             index_connection_opposite[i] += first_sys_idx_offset[i]
@@ -197,15 +197,15 @@ class OuterRingRingRodConnectionDifferentLevel(FreeJoint):
             index_reference_opposite[i] += first_sys_idx_offset[i]
             index_two[i] += second_sys_idx_offset[i]
 
-        self.index_one = np.array(index_one, dtype=np.int).flatten()
+        self.index_one = np.array(index_one, dtype=np.int64).flatten()
         self.index_one_opposite = np.array(
-            index_connection_opposite, dtype=np.int
+            index_connection_opposite, dtype=np.int64
         ).flatten()
-        self.index_reference = np.array(index_reference, dtype=np.int).flatten()
+        self.index_reference = np.array(index_reference, dtype=np.int64).flatten()
         self.index_reference_opposite = np.array(
-            index_reference_opposite, dtype=np.int
+            index_reference_opposite, dtype=np.int64
         ).flatten()
-        self.index_two = np.array(index_two, dtype=np.int).flatten()
+        self.index_two = np.array(index_two, dtype=np.int64).flatten()
 
     def apply_forces(self, rod_one, index_one, rod_two, index_two):
         del index_one, index_two

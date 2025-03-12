@@ -191,7 +191,7 @@ def get_connection_order_and_angle(
             ),
             rod_two_perpendicular_direction_vec.reshape(3, 1),
         ).reshape(3)
-        np.round_(target_tangent_direction, 12, target_tangent_direction)
+        np.round(target_tangent_direction, 12, target_tangent_direction)
 
         # If we cannot generate the rod_one_tangent by rotating target_tangent_direction, then we should perform
         # rotation in opposite direction, so multiply angle_btw_straight_ring_rods_sign by -1.
@@ -480,7 +480,7 @@ class OrthogonalRodsSideBySideJoint(FreeJoint):
             - rod_two_position_collection[:, index_two_hinge_opposite_side]
         )
         hinge_direction_vector /= _batch_norm(hinge_direction_vector)
-        np.round_(hinge_direction_vector[:], 12, hinge_direction_vector[:])
+        np.round(hinge_direction_vector[:], 12, hinge_direction_vector[:])
         # Second compute in plane torques. These torques are restricting the relative position of rod one and
         # rod two in plane. Rod_spring_connection_vec and hinge_direction_vec divides the ring rod 4 equal
         # quadrants and they are perpendicular to each other on the same plane. Cross-product of these two
@@ -514,7 +514,7 @@ class OrthogonalRodsSideBySideJoint(FreeJoint):
         # Distance vector between connection nodes of rods two and one.
         # distance_vector = surface_point_rod_two - surface_point_rod_one
         distance_vector = surface_point_rod_one - surface_point_rod_two
-        np.round_(distance_vector, 12, distance_vector)
+        np.round(distance_vector, 12, distance_vector)
 
         in_plane_distance = (
             rod_one_element_position - rod_two_position_collection[:, index_two]
@@ -528,7 +528,7 @@ class OrthogonalRodsSideBySideJoint(FreeJoint):
             / (rod_one_radius[index_one] + rod_two_radius[index_two])
             - 1
         )
-        np.round_(penetration_strain, 12, penetration_strain)
+        np.round(penetration_strain, 12, penetration_strain)
         idx_penetrate = np.where(penetration_strain < 0)[0]
         k_contact = np.zeros(index_one.shape)
         k_contact_temp = k_repulsive * np.abs(penetration_strain)
@@ -717,7 +717,7 @@ class OrthogonalRodsSideBySideJoint(FreeJoint):
         #         - rod_two_position_collection[:, index_two_hinge_opposite_side]
         # )
         # # hinge_direction_vec = -difference_kernel_for_block_structure(rod_two_tangents, ghost_elems_idx)[:,index_two_hing_side]
-        # # np.round_(direction_hinge, 12, direction_hinge)
+        # # np.round(direction_hinge, 12, direction_hinge)
         # hinge_direction_vec /= _batch_norm(hinge_direction_vec)
 
         link_direction = (
@@ -728,7 +728,7 @@ class OrthogonalRodsSideBySideJoint(FreeJoint):
         force_direction = (
             -_batch_dot(link_direction, hinge_direction_vector) * hinge_direction_vector
         )
-        np.round_(force_direction, 12, force_direction)
+        np.round(force_direction, 12, force_direction)
         torque_hinge = kt * _batch_cross(link_direction / 2, force_direction)
 
         # Second compute in plane torques. These torques are restricting the relative position of rod one and
@@ -756,7 +756,7 @@ class OrthogonalRodsSideBySideJoint(FreeJoint):
             * (rod_one_radius[index_one] + rod_two_radius[index_two])
         ) + (0.5 * rod_one_lengths[index_one] * target_tangent_direction)
         torque_force = target_position - current_position
-        np.round_(torque_force, 12, torque_force)
+        np.round(torque_force, 12, torque_force)
         torque_constrain_orientation = kt * _batch_cross(
             link_direction / 2, torque_force
         )

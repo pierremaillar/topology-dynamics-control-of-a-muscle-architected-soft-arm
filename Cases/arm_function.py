@@ -705,7 +705,7 @@ class SensoryFeedbackLongitudinalMuscles(NoForces):
         normal_vector = self.center_rod.director_collection[1, :, :]
         self.sin_alpha = np.einsum("in,in->n", normalized_target_vector, normal_vector)
 
-    def apply_forces(self, system, time: np.float = 0.0):
+    def apply_forces(self, system, time: np.float64 = 0.0):
         time = round(time, 5)
 
         s = np.hstack((0, np.cumsum(system.lengths)))

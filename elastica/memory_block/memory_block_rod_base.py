@@ -32,7 +32,7 @@ def make_block_memory_periodic_boundary_metadata(n_elems_in_rods):
     n_elem = n_elems_in_rods.copy()
     n_rods = n_elems_in_rods.shape[0]
 
-    periodic_boundary_node_idx = np.zeros((2, 3 * n_rods), dtype=np.int)
+    periodic_boundary_node_idx = np.zeros((2, 3 * n_rods), dtype=np.int64)
     # count ghost nodes, first rod does not have a ghost node at the start, so exclude first rod.
     periodic_boundary_node_idx[0, 0::3][1:] = 1
     # This is for the first periodic node at the end
@@ -41,7 +41,7 @@ def make_block_memory_periodic_boundary_metadata(n_elems_in_rods):
     periodic_boundary_node_idx[0, 2::3] = 1
     periodic_boundary_node_idx[0, :] = np.cumsum(periodic_boundary_node_idx[0, :])
     # Add [0, 1, 2, ..., n_rods] to the periodic boundary nodes to accommodate miscounting
-    periodic_boundary_node_idx[0, :] += np.repeat(np.arange(0, n_rods, dtype=np.int), 3)
+    periodic_boundary_node_idx[0, :] += np.repeat(np.arange(0, n_rods, dtype=np.int64), 3)
     # Now fill the reference node idx, to copy and correct periodic boundary nodes
     # First fill with the reference node idx of the first periodic node. This is the last node of the actual rod
     # (without ghost and periodic nodes).
@@ -53,7 +53,7 @@ def make_block_memory_periodic_boundary_metadata(n_elems_in_rods):
     # (without ghost and periodic nodes).
     periodic_boundary_node_idx[1, 2::3] = periodic_boundary_node_idx[0, 0::3] + 2
 
-    periodic_boundary_elems_idx = np.zeros((2, 2 * n_rods), dtype=np.int)
+    periodic_boundary_elems_idx = np.zeros((2, 2 * n_rods), dtype=np.int64)
     # count ghost elems, first rod does not have a ghost elem at the start, so exclude first rod.
     periodic_boundary_elems_idx[0, 0::2][1:] = 2
     # This is for the first periodic elem at the end
@@ -61,7 +61,7 @@ def make_block_memory_periodic_boundary_metadata(n_elems_in_rods):
     periodic_boundary_elems_idx[0, :] = np.cumsum(periodic_boundary_elems_idx[0, :])
     # Add [0, 1, 2, ..., n_rods] to the periodic boundary elems to accommodate miscounting
     periodic_boundary_elems_idx[0, :] += np.repeat(
-        np.arange(0, n_rods, dtype=np.int), 2
+        np.arange(0, n_rods, dtype=np.int64), 2
     )
     # Now fill the reference element idx, to copy and correct periodic boundary elements
     # First fill with the reference element idx of the first periodic element. This is the last element of the actual
@@ -73,7 +73,7 @@ def make_block_memory_periodic_boundary_metadata(n_elems_in_rods):
     # (without ghost and periodic elements).
     periodic_boundary_elems_idx[1, 1::2] = periodic_boundary_elems_idx[0, 0::2] + 1
 
-    periodic_boundary_voronoi_idx = np.zeros((2, n_rods), dtype=np.int)
+    periodic_boundary_voronoi_idx = np.zeros((2, n_rods), dtype=np.int64)
     # count ghost voronoi, first rod does not have a ghost voronoi at the start, so exclude first rod.
     periodic_boundary_voronoi_idx[0, 0::1][1:] = 3
     # This is for the first periodic voronoi at the end
@@ -81,7 +81,7 @@ def make_block_memory_periodic_boundary_metadata(n_elems_in_rods):
     periodic_boundary_voronoi_idx[0, :] = np.cumsum(periodic_boundary_voronoi_idx[0, :])
     # Add [0, 1, 2, ..., n_rods] to the periodic boundary voronoi to accommodate miscounting
     periodic_boundary_voronoi_idx[0, :] += np.repeat(
-        np.arange(0, n_rods, dtype=np.int), 1
+        np.arange(0, n_rods, dtype=np.int64), 1
     )
     # Now fill the reference voronoi idx, to copy and correct periodic boundary voronoi
     # Fill with the reference voronoi idx of the  periodic voronoi. This is the last voronoi of the actual rod
@@ -130,27 +130,27 @@ def make_block_memory_metadata(n_elems_in_rods):
     # n_voronoi_with_ghosts = np.sum(n_voronois_in_rods) + 3 * (n_rods - 1)
 
     # To be nulled
-    ghost_nodes_idx = np.zeros(((n_rods - 1),), dtype=np.int)
+    ghost_nodes_idx = np.zeros(((n_rods - 1),), dtype=np.int64)
     ghost_nodes_idx[:] = n_nodes_in_rods[:-1]
     ghost_nodes_idx = np.cumsum(ghost_nodes_idx)
     # Add [0, 1, 2, ... n_rods-2] to the ghost_nodes idx to accommodate miscounting
-    ghost_nodes_idx += np.arange(0, n_rods - 1, dtype=np.int)
+    ghost_nodes_idx += np.arange(0, n_rods - 1, dtype=np.int64)
 
-    ghost_elems_idx = np.zeros((2 * (n_rods - 1),), dtype=np.int)
+    ghost_elems_idx = np.zeros((2 * (n_rods - 1),), dtype=np.int64)
     ghost_elems_idx[::2] = n_elems_in_rods[:-1]
     ghost_elems_idx[1::2] = 1
     ghost_elems_idx = np.cumsum(ghost_elems_idx)
     # Add [0, 0, 1, 1, 2, 2, ... n_rods-2, n_rods-2] to the ghost_elems idx to accommodate miscounting
-    ghost_elems_idx += np.repeat(np.arange(0, n_rods - 1, dtype=np.int), 2)
+    ghost_elems_idx += np.repeat(np.arange(0, n_rods - 1, dtype=np.int64), 2)
 
-    ghost_voronoi_idx = np.zeros((3 * (n_rods - 1),), dtype=np.int)
+    ghost_voronoi_idx = np.zeros((3 * (n_rods - 1),), dtype=np.int64)
     ghost_voronoi_idx[::3] = n_voronois_in_rods[:-1]
     ghost_voronoi_idx[1::3] = 1
     ghost_voronoi_idx[2::3] = 1
     ghost_voronoi_idx = np.cumsum(ghost_voronoi_idx)
     # Add [0, 0, 0, 1, 1, 1, 2, 2, 2, ... n_rods-2, n_rods-2, n_rods-2] to the ghost_voronoi idx
     # to accommodate miscounting
-    ghost_voronoi_idx += np.repeat(np.arange(0, n_rods - 1, dtype=np.int), 3)
+    ghost_voronoi_idx += np.repeat(np.arange(0, n_rods - 1, dtype=np.int64), 3)
 
     return n_elems_with_ghosts, ghost_nodes_idx, ghost_elems_idx, ghost_voronoi_idx
 

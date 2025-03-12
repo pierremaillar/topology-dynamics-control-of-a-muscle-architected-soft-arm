@@ -7,7 +7,7 @@ import numba
 from numba import njit
 
 
-@njit(cache=True)
+@njit(cache=False)
 def _synchronize_periodic_boundary_of_vector_collection(input, periodic_idx):
     """
     This function synchronizes the periodic boundaries of a vector collection.
@@ -28,7 +28,7 @@ def _synchronize_periodic_boundary_of_vector_collection(input, periodic_idx):
             input[i, periodic_idx[0, k]] = input[i, periodic_idx[1, k]]
 
 
-@njit(cache=True)
+@njit(cache=False)
 def _synchronize_periodic_boundary_of_matrix_collection(input, periodic_idx):
     """
     This function synchronizes the periodic boundaries of a matrix collection.
@@ -50,7 +50,7 @@ def _synchronize_periodic_boundary_of_matrix_collection(input, periodic_idx):
                 input[i, j, periodic_idx[0, k]] = input[i, j, periodic_idx[1, k]]
 
 
-@njit(cache=True)
+@njit(cache=False)
 def _synchronize_periodic_boundary_of_scalar_collection(input, periodic_idx):
     """
     This function synchronizes the periodic boundaries of a scalar collection.
@@ -71,7 +71,7 @@ def _synchronize_periodic_boundary_of_scalar_collection(input, periodic_idx):
         input[periodic_idx[0, k]] = input[periodic_idx[1, k]]
 
 
-@njit(cache=True)
+@njit(cache=False)
 def _synchronize_periodic_boundary_of_nine_dim_vector_collection(input, periodic_idx):
     """
     This function synchronizes the periodic boundaries of a nine dimensional vector collection.

@@ -671,7 +671,7 @@ class Environment:
 
         center_position_ring_rod = np.zeros((3, total_number_of_ring_rods))
         connection_idx_straight_rod = np.zeros(
-            (total_number_of_ring_rods), dtype=np.int
+            (total_number_of_ring_rods), dtype=np.int64
         )
         radius_outer_ring_rod = np.zeros((total_number_of_ring_rods))
         base_length_ring_rod_outer = np.zeros((total_number_of_ring_rods))
@@ -1597,11 +1597,11 @@ class Environment:
 
         self.outer_ring_ring_rod_connection_offset_start_idx = np.zeros(
             ((total_number_of_ring_rods - 1) * number_of_straight_rods_except_center),
-            dtype=np.int,
+            dtype=np.int64,
         )
         self.outer_ring_ring_rod_connection_offset_end_idx = np.zeros(
             ((total_number_of_ring_rods - 1) * number_of_straight_rods_except_center),
-            dtype=np.int,
+            dtype=np.int64,
         )
 
         for idx in range(len(self.ring_rod_list_outer) - 1):
@@ -1650,7 +1650,7 @@ class Environment:
                 continue
 
             connection_idx_helical_rod = np.zeros(
-                (total_number_of_ring_rods), dtype=np.int
+                (total_number_of_ring_rods), dtype=np.int64
             )
 
             helical_rod_position = np.einsum(
@@ -1889,7 +1889,7 @@ class Environment:
                 continue
 
             connection_idx_straight_rod = np.zeros(
-                (total_number_of_ring_rods), dtype=np.int
+                (total_number_of_ring_rods), dtype=np.int64
             )
             connection_pressure_mag_scale = np.zeros((total_number_of_ring_rods))
             direction_list = self.ring_straight_rod_connection_direction_list[i]

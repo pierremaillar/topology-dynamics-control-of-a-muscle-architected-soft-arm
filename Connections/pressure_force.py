@@ -45,7 +45,7 @@ class PressureForce(NoForces):
         self.step_skip = kwargs.get("step_skip", 0)
         self.counter = 0
 
-    def apply_forces(self, system, time: np.float = 0.0):
+    def apply_forces(self, system, time: np.float64 = 0.0):
         pressure = self._apply_forces(
             system.radius,
             system.lengths,
