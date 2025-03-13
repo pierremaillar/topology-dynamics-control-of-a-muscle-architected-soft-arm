@@ -256,7 +256,6 @@ class LinearRibbon1D(RodBase):
             inv_mass_second_moment_of_inertia,
             shear_matrix,
             bend_matrix,
-            bend_constants,
             density,
             volume,
             mass,

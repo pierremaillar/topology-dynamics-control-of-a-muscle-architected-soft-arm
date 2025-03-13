@@ -42,3 +42,4 @@ from elastica.memory_block.memory_block_cosserat_rod import MemoryBlockCosseratR
 from elastica.memory_block.memory_block_rigid_body import MemoryBlockRigidBody
 from elastica.memory_block.memory_block_muscular_rod import MemoryBlockMuscularRod
 from elastica.memory_block.memory_block_ribbon1D import MemoryBlockRibbon1D
+from elastica.memory_block.memory_block_linear_ribbon1D import MemoryBlockLinearRibbon1D
