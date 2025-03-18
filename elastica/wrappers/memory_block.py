@@ -43,16 +43,17 @@ def construct_memory_block_structures(systems):
             temp_list_for_muscular_rod_systems.append(sys_to_be_added)
             temp_list_for_muscular_rod_systems_idx.append(system_idx)
 
-        if issubclass(sys_to_be_added.__class__, Ribbon1D):
+
+        # for all rods that are not a muscular rod
+        elif issubclass(sys_to_be_added.__class__, Ribbon1D):
             temp_list_for_ribbon1D_systems.append(sys_to_be_added)
             temp_list_for_ribbon1D_systems_idx.append(system_idx)
 
-        if issubclass(sys_to_be_added.__class__, LinearRibbon1D):
+        elif issubclass(sys_to_be_added.__class__, LinearRibbon1D):
             temp_list_for_linear_ribbon1D_systems.append(sys_to_be_added)
             temp_list_for_linear_ribbon1D_systems_idx.append(system_idx)
 
 
-        # for all rods that are not a muscular rod
         elif issubclass(sys_to_be_added.__class__, RodBase):
             temp_list_for_cosserat_rod_systems.append(sys_to_be_added)
             temp_list_for_cosserat_rod_systems_idx.append(system_idx)

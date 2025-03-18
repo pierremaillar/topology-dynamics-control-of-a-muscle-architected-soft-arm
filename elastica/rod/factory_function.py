@@ -885,7 +885,7 @@ def allocate_ribbon(
     nu,
     youngs_modulus,
     poisson_ratio,
-    alpha_c = 4.0/3.0,
+    alpha_c = 3.0/2.0,
     *args,
     **kwargs
 ):
