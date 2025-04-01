@@ -3,6 +3,7 @@ __all__ = [
     "NoForces",
     "GravityForces",
     "EndpointForces",
+    "EndpointTorques",
     "UniformTorques",
     "UniformForces",
     "MuscleTorques",
@@ -11,20 +12,22 @@ __all__ = [
 from elastica import IMPORT_NUMBA
 
 if IMPORT_NUMBA:
-    from elastica._elastica_numba._external_forces import (
+    from elastica._elastica_numba._external_forces import(
         NoForces,
         GravityForces,
         EndpointForces,
+        EndpointTorques,
         UniformTorques,
         UniformForces,
         MuscleTorques,
-    )
+    ) 
 
 else:
     from elastica._elastica_numpy._external_forces import (
         NoForces,
         GravityForces,
         EndpointForces,
+        EndpointTorques,
         UniformTorques,
         UniformForces,
         MuscleTorques,

@@ -1,11 +1,16 @@
 __doc__ = """ Numba implementation module for boundary condition implementations that constrain or
 define displacement conditions on the rod"""
-__all__ = ["FreeRod", "OneEndFixedRod", "HelicalBucklingBC"]
+__all__ = ["FreeRod", "OneEndFixedRod", "HelicalBucklingBC","GeneralConstraint"]
 import numpy as np
 from elastica._elastica_numba._rotations import _get_rotation_matrix
 
+from typing import Optional
+
 import numba
 from numba import njit
+from elastica._linalg import _batch_matvec
+from elastica.typing import SystemType, RodType
+
 from elastica._elastica_numba._synchronize_functions_for_periodic_boundary._synchronize_periodic_boundary import (
     _synchronize_periodic_boundary_of_matrix_collection,
     _synchronize_periodic_boundary_of_vector_collection,
@@ -320,4 +325,229 @@ class _ConstrainPeriodicBoundariesMuscleRod(_ConstrainPeriodicBoundaries):
         )
         _synchronize_periodic_boundary_of_scalar_collection(
             rod.fiber_activation, rod.periodic_boundary_elems_idx
+        )
+
+
+
+class GeneralConstraint(FreeRod):
+    """
+    This boundary condition class allows the specified node/link to have a configurable constraint.
+    Index can be passed to fix either or both the position or the director.
+    Constraining position is equivalent to setting 0 translational DOF.
+    Constraining director is equivalent to setting 0 rotational DOF.
+
+    Examples
+    --------
+    How to fix all translational and rotational dof except allowing twisting around the z-axis in an inertial frame:
+
+    >>> simulator.constrain(system).using(
+    ...    GeneralConstraint,
+    ...    constrained_position_idx=(0,),
+    ...    constrained_director_idx=(0,),
+    ...    translational_constraint_selector=np.array([True, True, True]),
+    ...    rotational_constraint_selector=np.array([True, True, False]),
+    ... )
+
+    How to allow the end of the rod to move in the XY plane and allow all rotational dof:
+
+    >>> simulator.constrain(rod).using(
+    ...    GeneralConstraint,
+    ...    constrained_position_idx=(-1,),
+    ...    translational_constraint_selector=np.array([True, True, False]),
+    ... )
+    """
+
+    def __init__(
+        self,
+        *fixed_data,
+        translational_constraint_selector: Optional[np.ndarray] = None,
+        rotational_constraint_selector: Optional[np.array] = None,
+        **kwargs,
+    ):
+        """
+
+        Initialization of the constraint. Any parameter passed to 'using' will be available in kwargs.
+
+        Parameters
+        ----------
+        constrained_position_idx : tuple
+            Tuple of position-indices that will be constrained
+        constrained_director_idx : tuple
+            Tuple of director-indices that will be constrained
+        translational_constraint_selector: Optional[np.ndarray]
+            np.array of type bool indicating which translational degrees of freedom (dof) to constrain.
+            If entry is True, the corresponding dof will be constrained. If None, we constrain all dofs.
+        rotational_constraint_selector: Optional[np.ndarray]
+            np.array of type bool indicating which translational degrees of freedom (dof) to constrain.
+            If entry is True, the corresponding dof will be constrained.
+        """
+        super().__init__(**kwargs)
+        pos, dir = [], []
+        for data in fixed_data:
+            if isinstance(data, np.ndarray) and data.shape == (3,):
+                pos.append(data)
+            elif isinstance(data, np.ndarray) and data.shape == (
+                3,
+                3,
+            ):
+                dir.append(data)
+            else:
+                # TODO: This part is prone to error.
+                break
+
+        if len(pos) > 0:
+            # transpose from (blocksize, dim) to (dim, blocksize)
+            self.fixed_positions = np.array(pos).transpose((1, 0))
+
+        if len(dir) > 0:
+            # transpose from (blocksize, dim, dim) to (dim, dim, blocksize)
+            self.fixed_directors = np.array(dir).transpose((1, 2, 0))
+
+        if translational_constraint_selector is None:
+            translational_constraint_selector = np.array([True, True, True])
+        if rotational_constraint_selector is None:
+            rotational_constraint_selector = np.array([True, True, True])
+        # properly validate the user-provided constraint selectors
+        assert (
+            type(translational_constraint_selector) == np.ndarray
+            and translational_constraint_selector.dtype == bool
+            and translational_constraint_selector.shape == (3,)
+        ), "Translational constraint selector must be a 1D boolean array of length 3."
+        assert (
+            type(rotational_constraint_selector) == np.ndarray
+            and rotational_constraint_selector.dtype == bool
+            and rotational_constraint_selector.shape == (3,)
+        ), "Rotational constraint selector must be a 1D boolean array of length 3."
+        # cast booleans to int
+        self.translational_constraint_selector = (
+            translational_constraint_selector.astype(int)
+        )
+        self.rotational_constraint_selector = rotational_constraint_selector.astype(int)
+
+    def constrain_values(self, system: SystemType, time: float) -> None:
+        if self.constrained_position_idx.size:
+            self.nb_constrain_translational_values(
+                system.position_collection,
+                self.fixed_positions,
+                self.constrained_position_idx,
+                self.translational_constraint_selector,
+            )
+
+    def constrain_rates(self, system: SystemType, time: float) -> None:
+        if self.constrained_position_idx.size:
+            self.nb_constrain_translational_rates(
+                system.velocity_collection,
+                self.constrained_position_idx,
+                self.translational_constraint_selector,
+            )
+        if self.constrained_director_idx.size:
+            self.nb_constrain_rotational_rates(
+                system.director_collection,
+                system.omega_collection,
+                self.constrained_director_idx,
+                self.rotational_constraint_selector,
+            )
+
+    @staticmethod
+    @njit(cache=True)
+    def nb_constrain_translational_values(
+        position_collection, fixed_position_collection, indices, constraint_selector
+    ) -> None:
+        """
+        Computes constrain values in numba njit decorator
+
+        Parameters
+        ----------
+        position_collection : numpy.ndarray
+            2D (dim, blocksize) array containing data with `float` type.
+        fixed_position_collection : numpy.ndarray
+            2D (dim, blocksize) array containing data with `float` type.
+        indices : numpy.ndarray
+            1D array containing the index of constraining nodes
+        constraint_selector: numpy.ndarray
+            1D array of type int and size (3,) indicating which translational Degrees of Freedom (DoF) to constrain.
+            Entries are integers in {0, 1} (e.g. a binary values of either 0 or 1).
+            If entry is 1, the concerning DoF will be constrained, otherwise it will be free for translation.
+            Selector shall be specified in the inertial frame
+        """
+        block_size = indices.size
+        for i in range(block_size):
+            k = indices[i]
+            # First term: add the old position values using the inverse constraint selector (e.g. DoF)
+            # Second term: add the fixed position values using the constraint selector (e.g. constraint dimensions)
+            position_collection[..., k] = (
+                1 - constraint_selector
+            ) * position_collection[
+                ..., k
+            ] + constraint_selector * fixed_position_collection[
+                ..., i
+            ]
+
+    @staticmethod
+    @njit(cache=True)
+    def nb_constrain_translational_rates(
+        velocity_collection, indices, constraint_selector
+    ) -> None:
+        """
+        Compute constrain rates in numba njit decorator
+
+        Parameters
+        ----------
+        velocity_collection : numpy.ndarray
+            2D (dim, blocksize) array containing data with `float` type.
+        indices : numpy.ndarray
+            1D array containing the index of constraining nodes
+        constraint_selector: numpy.ndarray
+            1D array of type int and size (3,) indicating which translational Degrees of Freedom (DoF) to constrain.
+            Entries are integers in {0, 1} (e.g. a binary values of either 0 or 1).
+            If entry is 1, the concerning DoF will be constrained, otherwise it will be free for translation.
+            Selector shall be specified in the inertial frame
+        """
+
+        block_size = indices.size
+        for i in range(block_size):
+            k = indices[i]
+            # set the dofs to 0 where the constraint_selector mask is active
+            velocity_collection[..., k] = (
+                1 - constraint_selector
+            ) * velocity_collection[..., k]
+
+    @staticmethod
+    @njit(cache=True)
+    def nb_constrain_rotational_rates(
+        director_collection, omega_collection, indices, constraint_selector
+    ) -> None:
+        """
+        Compute constrain rates in numba njit decorator
+
+        Parameters
+        ----------
+        director_collection : numpy.ndarray
+            2D (dim, blocksize) array containing data with `float` type.
+        omega_collection : numpy.ndarray
+            2D (dim, blocksize) array containing data with `float` type.
+        indices : numpy.ndarray
+            1D array containing the index of constraining nodes
+        constraint_selector: numpy.ndarray
+            1D array of type int and size (3,) indicating which rotational Degrees of Freedom (DoF) to constrain.
+            Entries are integers in {0, 1} (e.g. a binary values of either 0 or 1).
+            If an entry is 1, the rotation around the respective axis will be constrained,
+            otherwise the system can freely rotate around the axis.
+            The selector shall be specified in the lab frame
+        """
+        directors = director_collection[..., indices]
+
+        # rotate angular velocities to lab frame
+        omega_collection_lab_frame = _batch_matvec(
+            _batch_matrix_transpose(directors), omega_collection[..., indices]
+        )
+
+        # apply constraint selector to angular velocities in lab frame
+        omega_collection_not_constrained = (
+            1 - np.expand_dims(constraint_selector, 1)
+        ) * omega_collection_lab_frame
+
+        # rotate angular velocities vector back to local frame and apply to omega_collection
+        omega_collection[..., indices] = _batch_matvec(
+            directors, omega_collection_not_constrained
         )

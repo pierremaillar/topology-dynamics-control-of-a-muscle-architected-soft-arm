@@ -195,6 +195,84 @@ class EndpointForces(NoForces):
         external_forces[..., 0] += start_force * factor
         external_forces[..., -1] += end_force * factor
 
+class EndpointTorques(NoForces):
+    """
+    This class applies constant Torques on the endpoint nodes.
+
+        Attributes
+        ----------
+        start_force: numpy.ndarray
+            2D (dim, 1) array containing data with 'float' type. Torque applied to first node of the rod-like object.
+        end_force: numpy.ndarray
+            2D (dim, 1) array containing data with 'float' type. Torque applied to last node of the rod-like object.
+        ramp_up_time: float
+            Applied forces are ramped up until ramp up time.
+
+    """
+
+    def __init__(self, start_torque, end_torque, ramp_up_time=0.0):
+        """
+
+        Parameters
+        ----------
+        start_force: numpy.ndarray
+            2D (dim, 1) array containing data with 'float' type.
+            Force applied to first node of the rod-like object.
+        end_force: numpy.ndarray
+            2D (dim, 1) array containing data with 'float' type.
+            Force applied to last node of the rod-like object.
+        ramp_up_time: float
+            Applied forces are ramped up until ramp up time.
+
+        """
+        super(EndpointTorques, self).__init__()
+        self.start_torque = start_torque
+        self.end_torque = end_torque
+        assert ramp_up_time >= 0.0
+        self.ramp_up_time = ramp_up_time
+
+    def apply_forces(self, system, time=0.0):
+        # factor = min(1.0, time / self.ramp_up_time)
+        #
+        # system.external_forces[..., 0] += self.start_force * factor
+        # system.external_forces[..., -1] += self.end_force * factor
+
+        self.compute_end_point_torques(
+            system.external_torques,
+            self.start_torque,
+            self.end_torque,
+            time,
+            self.ramp_up_time,
+        )
+
+    @staticmethod
+    @njit(cache=True)
+    def compute_end_point_torques(
+        external_torques, start_torque, end_torque, time, ramp_up_time
+    ):
+        """
+        Compute end point forces that are applied on the rod using numba njit decorator.
+
+        Parameters
+        ----------
+        external_forces: numpy.ndarray
+            2D (dim, blocksize) array containing data with 'float' type. External force vector.
+        start_force: numpy.ndarray
+            2D (dim, 1) array containing data with 'float' type.
+        end_force: numpy.ndarray
+            2D (dim, 1) array containing data with 'float' type.
+            Force applied to last node of the rod-like object.
+        time: float
+        ramp_up_time: float
+            Applied forces are ramped up until ramp up time.
+
+        Returns
+        -------
+
+        """
+        factor = min(1.0, time / ramp_up_time)
+        external_torques[..., 0] += start_torque * factor
+        external_torques[..., -1] += end_torque * factor
 
 class UniformTorques(NoForces):
     """
