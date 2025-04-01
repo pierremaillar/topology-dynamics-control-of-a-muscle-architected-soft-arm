@@ -2,13 +2,14 @@ __doc__ = """ Numba implementation module for boundary condition implementations
 define displacement conditions on the rod"""
 __all__ = ["FreeRod", "OneEndFixedRod", "HelicalBucklingBC","GeneralConstraint"]
 import numpy as np
-from elastica._elastica_numba._rotations import _get_rotation_matrix
 
 from typing import Optional
 
 import numba
 from numba import njit
-from elastica._linalg import _batch_matvec
+
+from elastica._linalg import _batch_matvec, _batch_matrix_transpose
+from elastica._rotations import _get_rotation_matrix
 from elastica.typing import SystemType, RodType
 
 from elastica._elastica_numba._synchronize_functions_for_periodic_boundary._synchronize_periodic_boundary import (
@@ -362,6 +363,7 @@ class GeneralConstraint(FreeRod):
         *fixed_data,
         translational_constraint_selector: Optional[np.ndarray] = None,
         rotational_constraint_selector: Optional[np.array] = None,
+        rod_frame_bool: Optional[bool] = None,
         **kwargs,
     ):
         """
@@ -407,7 +409,15 @@ class GeneralConstraint(FreeRod):
             translational_constraint_selector = np.array([True, True, True])
         if rotational_constraint_selector is None:
             rotational_constraint_selector = np.array([True, True, True])
-        # properly validate the user-provided constraint selectors
+
+        if rod_frame_bool is None:
+            rod_frame_bool = False
+
+        assert isinstance(
+            rod_frame_bool, bool), "rod_frame_bool must be a boolean value (True if the BCs are defined with respect to the rod frame)."
+
+            
+
         assert (
             type(translational_constraint_selector) == np.ndarray
             and translational_constraint_selector.dtype == bool
@@ -418,102 +428,133 @@ class GeneralConstraint(FreeRod):
             and rotational_constraint_selector.dtype == bool
             and rotational_constraint_selector.shape == (3,)
         ), "Rotational constraint selector must be a 1D boolean array of length 3."
+
+
         # cast booleans to int
         self.translational_constraint_selector = (
             translational_constraint_selector.astype(int)
         )
         self.rotational_constraint_selector = rotational_constraint_selector.astype(int)
+        self.rod_frame_bool = rod_frame_bool
+        self.constrained_position_idx = np.array(kwargs.get("constrained_position_idx", []), dtype=int)
+        self.constrained_director_idx = np.array(kwargs.get("constrained_director_idx", []), dtype=int)
 
-    def constrain_values(self, system: SystemType, time: float) -> None:
+    def constrain_values(self, rod, time: float) -> None:
         if self.constrained_position_idx.size:
             self.nb_constrain_translational_values(
-                system.position_collection,
+                rod.director_collection,
+                rod.position_collection,
                 self.fixed_positions,
                 self.constrained_position_idx,
                 self.translational_constraint_selector,
+                self.rod_frame_bool,
             )
 
-    def constrain_rates(self, system: SystemType, time: float) -> None:
+    def constrain_rates(self, rod, time: float) -> None:
         if self.constrained_position_idx.size:
-            self.nb_constrain_translational_rates(
-                system.velocity_collection,
+            self.nb_constrain_translational_rates(                
+                rod.director_collection,
+                rod.velocity_collection,
                 self.constrained_position_idx,
                 self.translational_constraint_selector,
+                self.rod_frame_bool,
             )
         if self.constrained_director_idx.size:
             self.nb_constrain_rotational_rates(
-                system.director_collection,
-                system.omega_collection,
+                rod.director_collection,
+                rod.omega_collection,
                 self.constrained_director_idx,
                 self.rotational_constraint_selector,
+                self.rod_frame_bool,
             )
-
     @staticmethod
     @njit(cache=True)
     def nb_constrain_translational_values(
-        position_collection, fixed_position_collection, indices, constraint_selector
+        director_collection, position_collection, fixed_position_collection, indices, constraint_selector, rod_frame_bool
     ) -> None:
         """
-        Computes constrain values in numba njit decorator
+        Computes constrained position values in the local (material) frame.
 
         Parameters
         ----------
+        director_collection : numpy.ndarray
+            3D (3, 3, blocksize) array containing directors for frame transformation.
         position_collection : numpy.ndarray
-            2D (dim, blocksize) array containing data with `float` type.
+            2D (3, blocksize) array containing position data in the lab frame.
         fixed_position_collection : numpy.ndarray
-            2D (dim, blocksize) array containing data with `float` type.
+            2D (3, blocksize) array containing target positions.
         indices : numpy.ndarray
-            1D array containing the index of constraining nodes
+            1D array containing the indices of constraining nodes.
         constraint_selector: numpy.ndarray
-            1D array of type int and size (3,) indicating which translational Degrees of Freedom (DoF) to constrain.
-            Entries are integers in {0, 1} (e.g. a binary values of either 0 or 1).
-            If entry is 1, the concerning DoF will be constrained, otherwise it will be free for translation.
-            Selector shall be specified in the inertial frame
+            1D array (3,) indicating which translational DoFs to constrain.
+        rod_frame_bool : bool
+            Whether constraints are applied in the rod frame (local frame).
         """
-        block_size = indices.size
-        for i in range(block_size):
-            k = indices[i]
-            # First term: add the old position values using the inverse constraint selector (e.g. DoF)
-            # Second term: add the fixed position values using the constraint selector (e.g. constraint dimensions)
-            position_collection[..., k] = (
-                1 - constraint_selector
-            ) * position_collection[
-                ..., k
-            ] + constraint_selector * fixed_position_collection[
-                ..., i
-            ]
+
+        if rod_frame_bool:
+            # Select the relevant directors
+            directors = director_collection[..., indices]
+
+            # Convert positions to local frame
+            position_local = _batch_matvec(_batch_matrix_transpose(directors), position_collection[..., indices])
+            fixed_position_local = _batch_matvec(_batch_matrix_transpose(directors), fixed_position_collection)
+
+            # Apply constraints in the local frame
+            position_local = (1 - constraint_selector[:, np.newaxis]) * position_local + constraint_selector[:, np.newaxis] * fixed_position_local
+
+            # Convert back to lab frame
+            position_collection[..., indices] = _batch_matvec(directors, position_local)
+
+        else:
+            # Apply constraints directly in the lab frame
+            position_collection[..., indices] = (
+                (1 - constraint_selector[:, np.newaxis]) * position_collection[..., indices]
+                + constraint_selector[:, np.newaxis] * fixed_position_collection
+            )
 
     @staticmethod
     @njit(cache=True)
     def nb_constrain_translational_rates(
-        velocity_collection, indices, constraint_selector
+        director_collection, velocity_collection, indices, constraint_selector, rod_frame_bool
     ) -> None:
         """
-        Compute constrain rates in numba njit decorator
+        Compute constrained velocity rates in the local (material) frame.
 
         Parameters
         ----------
+        director_collection : numpy.ndarray
+            3D (3, 3, blocksize) array containing directors for frame transformation.
         velocity_collection : numpy.ndarray
-            2D (dim, blocksize) array containing data with `float` type.
+            2D (3, blocksize) array containing velocity data in the lab frame.
         indices : numpy.ndarray
-            1D array containing the index of constraining nodes
+            1D array containing the indices of constraining nodes.
         constraint_selector: numpy.ndarray
-            1D array of type int and size (3,) indicating which translational Degrees of Freedom (DoF) to constrain.
-            Entries are integers in {0, 1} (e.g. a binary values of either 0 or 1).
-            If entry is 1, the concerning DoF will be constrained, otherwise it will be free for translation.
-            Selector shall be specified in the inertial frame
+            1D array (3,) indicating which translational DoFs to constrain.
+        rod_frame_bool : bool
+            Whether constraints are applied in the rod frame (local frame).
         """
 
-        block_size = indices.size
-        for i in range(block_size):
-            k = indices[i]
-            # set the dofs to 0 where the constraint_selector mask is active
-            velocity_collection[..., k] = (
-                1 - constraint_selector
-            ) * velocity_collection[..., k]
+        if rod_frame_bool:
+            # Select the relevant directors
+            directors = director_collection[..., indices]
+
+            # Convert velocities to local frame
+            velocity_local = _batch_matvec(_batch_matrix_transpose(directors), velocity_collection[..., indices])
+
+            # Apply constraints in the local frame
+            velocity_local = (1 - constraint_selector[:, np.newaxis]) * velocity_local
+
+            # Convert back to lab frame
+            velocity_collection[..., indices] = _batch_matvec(directors, velocity_local)
+
+        else:
+            # Apply constraints directly in the lab frame
+            velocity_collection[..., indices] = (
+                (1 - constraint_selector[:, np.newaxis]) * velocity_collection[..., indices]
+            )
 
     @staticmethod
-    @njit(cache=True)
+    #@njit(cache=True)
     def nb_constrain_rotational_rates(
         director_collection, omega_collection, indices, constraint_selector
     ) -> None:
