@@ -76,23 +76,41 @@ def extend_stepper_interface(Stepper, System):
 
 
 # TODO Improve interface of this function to take args and kwargs for ease of use
-def integrate(StatefulStepper, System, final_time: float, n_steps: int = 1000):
+def integrate(StatefulStepper, System, final_time: float, n_steps: int = 1000, adaptive_time_step=False, error_tolerance=1e-3, safety_factor=0.22):
     assert final_time > 0.0, "Final time is negative!"
     assert n_steps > 0, "Number of integration steps is negative!"
 
-    # Extend the stepper's interface after introspecting the properties
-    # of the system. If system is a collection of small systems (whose
-    # states cannot be aggregated), then stepper now loops over the system
-    # state
     do_step, stages_and_updates = extend_stepper_interface(StatefulStepper, System)
 
-    dt = np.float64(float(final_time) / n_steps)
+    dt = np.float64(final_time / n_steps)
     time = np.float64(0.0)
+    sf = np.float64(safety_factor)
 
     from tqdm import tqdm
+    import copy
 
-    for i in tqdm(range(n_steps)):
-        time = do_step(StatefulStepper, stages_and_updates, System, time, dt)
+    with tqdm(total=n_steps) as pbar:
+        for _ in range(n_steps):
+            
+            if adaptive_time_step:
+                System_copy = copy.deepcopy(System)
 
-    print("Final time of simulation is : ", time)
-    return
+            time = do_step(StatefulStepper, stages_and_updates, System, time, dt)
+
+            if adaptive_time_step: 
+                half_dt = dt / 2
+                do_step(StatefulStepper, stages_and_updates, System_copy, time, half_dt)
+                do_step(StatefulStepper, stages_and_updates, System_copy, time, half_dt)
+
+                errors = np.array([
+                    np.linalg.norm(copy.kinematic_states.position_collection - system.kinematic_states.position_collection) /
+                    np.linalg.norm(system.kinematic_states.position_collection)
+                    for system, copy in zip(System._memory_blocks, System_copy._memory_blocks)
+                ])
+                error = np.max(errors)
+
+                dt *= (error_tolerance / (error + 1e-10)) ** sf
+
+            pbar.update(1)
+
+    print("Final time of simulation is:", time)
