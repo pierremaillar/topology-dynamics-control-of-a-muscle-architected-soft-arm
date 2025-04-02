@@ -52,7 +52,7 @@ def plot_3D_ribbons_from_process_solution(solution_df, solution_indices=None, n_
 
         min_index = min(solution_indices)
         max_index = max(solution_indices)
-        opacity = 0.1 + 0.9 * (index - min_index) / (max_index - min_index)
+        opacity = 0.1 + 0.89 * (index - min_index) / (max_index - min_index)
 
         for i in range(len(one_solution)):
             x, y, z = one_solution.iloc[i][['X', 'Y', 'Z']]
