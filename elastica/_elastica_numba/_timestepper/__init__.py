@@ -3,6 +3,8 @@ __doc__ = """Timestepping utilities to be used with Rod and RigidBody classes of
 import numpy as np
 import numba
 from numba import typeof
+from tqdm import tqdm
+import copy
 
 # from ._explicit_steppers import ExplicitStepper
 # from ._symplectic_steppers import SymplecticStepper
@@ -76,6 +78,17 @@ def extend_stepper_interface(Stepper, System):
 
 
 # TODO Improve interface of this function to take args and kwargs for ease of use
+
+@numba.njit(cache=True)
+def compute_error(position, position_copy):
+    max_error = 0.0
+    num = np.linalg.norm(position_copy - position)
+    denom = np.linalg.norm(position) + 1e-10
+    error = num / denom
+    if error > max_error:
+        max_error = error
+    return max_error
+
 def integrate(StatefulStepper, System, final_time: float, n_steps: int = 1000, adaptive_time_step=False, error_tolerance=1e-3, safety_factor=0.22):
     assert final_time > 0.0, "Final time is negative!"
     assert n_steps > 0, "Number of integration steps is negative!"
@@ -86,31 +99,21 @@ def integrate(StatefulStepper, System, final_time: float, n_steps: int = 1000, a
     time = np.float64(0.0)
     sf = np.float64(safety_factor)
 
-    from tqdm import tqdm
-    import copy
+    for i in tqdm(range(n_steps)):
+        
+        if adaptive_time_step:
+            System_copy = copy.deepcopy(System)
 
-    with tqdm(total=n_steps) as pbar:
-        for _ in range(n_steps):
-            
-            if adaptive_time_step:
-                System_copy = copy.deepcopy(System)
+        time = do_step(StatefulStepper, stages_and_updates, System, time, dt)
 
-            time = do_step(StatefulStepper, stages_and_updates, System, time, dt)
+        if adaptive_time_step: 
+            half_dt = dt / 2
+            do_step(StatefulStepper, stages_and_updates, System_copy, time, half_dt)
+            do_step(StatefulStepper, stages_and_updates, System_copy, time, half_dt)
 
-            if adaptive_time_step: 
-                half_dt = dt / 2
-                do_step(StatefulStepper, stages_and_updates, System_copy, time, half_dt)
-                do_step(StatefulStepper, stages_and_updates, System_copy, time, half_dt)
+            for system, system_copy in zip(System._memory_blocks, System_copy._memory_blocks):          
+                error = compute_error(system.kinematic_states.position_collection, system_copy.kinematic_states.position_collection) 
+            dt *= (error_tolerance / (error + 1e-10)) ** sf
 
-                errors = np.array([
-                    np.linalg.norm(copy.kinematic_states.position_collection - system.kinematic_states.position_collection) /
-                    np.linalg.norm(system.kinematic_states.position_collection)
-                    for system, copy in zip(System._memory_blocks, System_copy._memory_blocks)
-                ])
-                error = np.max(errors)
-
-                dt *= (error_tolerance / (error + 1e-10)) ** sf
-
-            pbar.update(1)
 
     print("Final time of simulation is:", time)

@@ -95,10 +95,10 @@ def plot_3D_ribbons_from_process_solution(solution_df, solution_indices=None, n_
 
         X_surf, Y_surf, Z_surf, colors = map(np.array, (X_surf, Y_surf, Z_surf, colors))
 
-        print(f"Indice of the solution: {one_solution['Index_solution'].max()}")
-        print(f"X_max: {np.max(np.abs(one_solution.X)):.3f}")
-        print(f"Y_max: {np.max(np.abs(one_solution.Y)):.3f}")
-        print(f"Z_max: {np.max(np.abs(one_solution.Z)):.3f}\n")
+        #print(f"Indice of the solution: {one_solution['Index_solution'].max()}")
+        #print(f"X_max: {np.max(np.abs(one_solution.X)):.3f}")
+        #print(f"Y_max: {np.max(np.abs(one_solution.Y)):.3f}")
+        #print(f"Z_max: {np.max(np.abs(one_solution.Z)):.3f}\n")
 
         fig.add_trace(go.Surface(x=X_surf, y=Y_surf, z=Z_surf, surfacecolor=colors,
                                  colorscale='Plasma', showscale=False, opacity=opacity, name=f'Ribbon {index}'))
@@ -121,7 +121,7 @@ def plot_3D_ribbons_from_process_solution(solution_df, solution_indices=None, n_
     return fig
 
 
-def process_solution_file(path_s):
+def process_solution_file_auto(path_s):
 
     # Read the header to extract meta-information
     fl = pd.read_table(path_s, nrows=0, sep='\s+')
@@ -387,10 +387,10 @@ def plot_3D_ribbons_from_process_solutions(solution_df1, solution_indices1, solu
 
             X_surf, Y_surf, Z_surf, colors = map(np.array, (X_surf, Y_surf, Z_surf, colors))
 
-            print(f"Solution {index} from dataset ({colormap}):")
-            print(f"  X_max: {np.max(np.abs(one_solution.X)):.3f}")
-            print(f"  Y_max: {np.max(np.abs(one_solution.Y)):.3f}")
-            print(f"  Z_max: {np.max(np.abs(one_solution.Z)):.3f}\n")
+            #print(f"Solution {index} from dataset ({colormap}):")
+            #print(f"  X_max: {np.max(np.abs(one_solution.X)):.3f}")
+            #print(f"  Y_max: {np.max(np.abs(one_solution.Y)):.3f}")
+            #print(f"  Z_max: {np.max(np.abs(one_solution.Z)):.3f}\n")
 
             fig.add_trace(go.Surface(
                 x=X_surf, y=Y_surf, z=Z_surf, surfacecolor=colors,
@@ -416,7 +416,7 @@ def plot_3D_ribbons_from_process_solutions(solution_df1, solution_indices1, solu
     fig.show()
     return fig
 
-def process_solution_data(pp_list_read, step_skip, base_length):
+def process_solution_elastica(pp_list_read, step_skip, base_length):
     """
     Processes solution data and converts it into a structured DataFrame.
 
@@ -440,11 +440,11 @@ def process_solution_data(pp_list_read, step_skip, base_length):
     rows = []
     j = 0
 
-    for t, step, pos, director, stress, couple, curvature in zip(
+    for t, step, pos, director, stress, couple, curvature, strains, dilatation in zip(
         pp_list_read["time"], pp_list_read["step"],
         pp_list_read["position"], pp_list_read["directors"],
         pp_list_read["internal_stress"], pp_list_read["internal_couple"],
-        pp_list_read["curvature"]
+        pp_list_read["curvature"], pp_list_read["sigma"], pp_list_read["dilatation"]
     ):
         num_elements = pos.shape[1]  # Number of elements
 
@@ -465,6 +465,15 @@ def process_solution_data(pp_list_read, step_skip, base_length):
         last_element = curvature[:, -1][:, np.newaxis] 
         curvature_extended = np.concatenate((curvature, last_element), axis=1)
         curvature_extended = np.concatenate((curvature_extended, last_element), axis=1)
+
+        # Extend strains
+        last_element = strains[:, -1][:, np.newaxis] 
+        strains_extended = np.concatenate((strains, last_element), axis=1)   
+
+        # Extend dilatation
+        last_element = dilatation[-1]
+        dilatation_extended = np.append(dilatation,last_element)
+       
 
         # Populate rows
         for i in range(num_elements):
@@ -490,7 +499,11 @@ def process_solution_data(pp_list_read, step_skip, base_length):
                 'm3': couple_extended[2, i],
                 'k1': curvature_extended[2, i],
                 'k2': curvature_extended[2, i],
-                'k3': curvature_extended[2, i],            
+                'k3': curvature_extended[2, i],
+                'e1': strains_extended[0,i],
+                'e2': strains_extended[1,i],
+                'e3': strains_extended[2,i],
+                'dilatation': dilatation_extended[i],
             })
         j+=1
 

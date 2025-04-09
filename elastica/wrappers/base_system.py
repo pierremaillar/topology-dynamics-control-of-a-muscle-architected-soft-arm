@@ -57,6 +57,16 @@ class BaseSystemCollection(MutableSequence):
         # tacked on to the SystemCollection in a sim.
         self._features = NotImplemented
 
+        
+    def fast_copy(self):
+        new_system = System()  # Create a new instance
+        # Manually copy only necessary attributes
+        new_system.kinematic_states = copy.deepcopy(self.kinematic_states)
+        new_system._memory_blocks = [copy.deepcopy(block) for block in self._memory_blocks]
+        # Add more attributes if needed
+        return new_system
+    
+
     def _check_type(self, sys_to_be_added):
         if not issubclass(sys_to_be_added.__class__, self.allowed_sys_types):
             raise TypeError(

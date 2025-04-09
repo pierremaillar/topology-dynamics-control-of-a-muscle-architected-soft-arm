@@ -177,6 +177,7 @@ class Ribbon1D(RodBase):
         density,
         nu,
         youngs_modulus,
+        shear_modulus,
         poisson_ratio,
         alpha_c=4.0/3.0,
         *args,
@@ -236,6 +237,7 @@ class Ribbon1D(RodBase):
             density,
             nu,
             youngs_modulus,
+            shear_modulus,
             poisson_ratio,
             alpha_c=4.0/3.0,
             *args,
@@ -585,8 +587,7 @@ def _compute_internal_shear_stretch_stresses_from_model(
     internal_stress,
 ):
     """
-    1D Constitutive model for a ribbon. For now, It is simply the strain follow the cosserat rod constitutive law.
-    Note: Is this right ? Does it holds if internal_stress[:] = 0 (only angular acc from curvatures)
+    Relation between internal strain (shear/strech) and internal forces. This relation is essential for the numerical solver used in elastica but is inforcing nmerically the lagrangian mutiplier of the constrain: dr/ds = d3 for the 1D ribbon hybrid model.
     
     Linear force functional
     Operates on
@@ -614,15 +615,15 @@ def _compute_internal_shear_stretch_stresses_from_model(
 
     #Note: Not sure this is efficient and is not entirely true but is needed as kappa is compute between element
     #and not for every element (nbr of element - 1)
-    kappa_padded = np.hstack((kappa-rest_kappa, np.zeros((3, 1))))
+    #kappa_padded = np.hstack((kappa-rest_kappa, np.zeros((3, 1))))
 
 
-    internal_stress[0,:] = shear_matrix[0,0,:]*(sigma[0,:]-rest_sigma[0,:])
-    internal_stress[1,:] = shear_matrix[1,1,:]*(sigma[1,:]-rest_sigma[1,:])
-    internal_stress[2,:] = (2*bend_constants[0,0]*((sigma[2,:]-rest_sigma[2,:])+bend_constants[1,2]*(kappa_padded[2,:])**2))
+    #internal_stress[0,:] = shear_matrix[0,0,:]*(sigma[0,:]-rest_sigma[0,:])
+    #internal_stress[1,:] = shear_matrix[1,1,:]*(sigma[1,:]-rest_sigma[1,:])
+    #internal_stress[2,:] = (2*bend_constants[0,0]*((sigma[2,:]-rest_sigma[2,:])+bend_constants[1,2]*(kappa_padded[2,:])**2))
 
         
-    #internal_stress[:] = _batch_matvec(shear_matrix, sigma - rest_sigma)
+    internal_stress[:] = _batch_matvec(shear_matrix, sigma - rest_sigma)
 
 
 
@@ -681,7 +682,7 @@ def _compute_internal_bending_twist_stresses_from_model(
         #NOTE: Can be optimized if needed 
         internal_couple[0, k] = 2*B*(kappa[0, k] - rest_kappa[0, k])
         internal_couple[1, k] = 2*C*k2_temp + 4*E*(poisson_ratio*k2_temp**2+k3_temp**2)*poisson_ratio*phi[k]*k2_temp+E*(poisson_ratio*k2_temp**2+k3_temp**2)**2*phi_p[k]*OneOver_kStar
-        internal_couple[2, k] = 2*A*((sigma[2,k]-rest_sigma[2,k])+F*k3_temp**2)*2*k3_temp+2*C*k3_temp+4*E*(poisson_ratio*k2_temp**2+k3_temp**2)*k3_temp*phi[k]
+        internal_couple[2, k] = 2*A*(F*k3_temp**2)*2*k3_temp+2*C*k3_temp+4*E*(poisson_ratio*k2_temp**2+k3_temp**2)*k3_temp*phi[k]
 
 @numba.njit(cache=True)
 def _compute_phi_and_phiprime(

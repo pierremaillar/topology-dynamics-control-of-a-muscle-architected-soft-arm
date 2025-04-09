@@ -884,6 +884,7 @@ def allocate_ribbon(
     density,
     nu,
     youngs_modulus,
+    shear_modulus,
     poisson_ratio,
     alpha_c = 3.0/2.0,
     *args,
@@ -1147,7 +1148,8 @@ def allocate_ribbon(
         )
 
     # Shear/Stretch matrix
-    shear_modulus = youngs_modulus / (poisson_ratio + 1.0)
+    if shear_modulus is None:
+        shear_modulus = youngs_modulus / (poisson_ratio + 1.0)
     shear_matrix = np.zeros(
         (MaxDimension.value(), MaxDimension.value(), n_elements), np.float64
     )
