@@ -1169,10 +1169,10 @@ def allocate_ribbon(
     )
     for i in range(n_elements):
         bend_constants[:, :, i] = np.array([[0.5 * youngs_modulus * width[i] * thickness[i],
-            (1.0 / 12) * youngs_modulus * width[i]**3 * thickness[i],
-            (1.0 / 12) * youngs_modulus * width[i] * thickness[i]**3],
+            (1.0 / 24) * youngs_modulus * width[i]**3 * thickness[i],
+            (1.0 / 24) * youngs_modulus * width[i] * thickness[i]**3],
             [(1.0 / 12) * youngs_modulus * width[i] * thickness[i]**3 / (1 + poisson_ratio),
-            0.25 * youngs_modulus * width[i]**5 * thickness[i],
+            (1.0/4.0) * youngs_modulus * width[i]**5 * thickness[i],
             (1.0 / 24) * width[i]**2],
             [poisson_ratio, ((12 * (1 - poisson_ratio**2))**0.5 * width[i]**2) / thickness[i], 1]])
         

@@ -682,7 +682,7 @@ def _compute_internal_bending_twist_stresses_from_model(
         #NOTE: Can be optimized if needed 
         internal_couple[0, k] = 2*B*(kappa[0, k] - rest_kappa[0, k])
         internal_couple[1, k] = 2*C*k2_temp + 4*E*(poisson_ratio*k2_temp**2+k3_temp**2)*poisson_ratio*phi[k]*k2_temp+E*(poisson_ratio*k2_temp**2+k3_temp**2)**2*phi_p[k]*OneOver_kStar
-        internal_couple[2, k] = 2*A*(F*k3_temp**2)*2*k3_temp+2*C*k3_temp+4*E*(poisson_ratio*k2_temp**2+k3_temp**2)*k3_temp*phi[k]
+        internal_couple[2, k] = 2*D*k3_temp+4*E*(poisson_ratio*k2_temp**2+k3_temp**2)*k3_temp*phi[k]
 
 @numba.njit(cache=True)
 def _compute_phi_and_phiprime(
@@ -713,7 +713,7 @@ def _compute_phi_and_phiprime(
     -------
     None (modifies phi and phi_p in place)
     """
-    kappa2b = kappa[1, :] / bend_constants[2, 1, 0]  # Ensure bend_constants[7, 0] is well-defined
+    kappa2b = kappa[1, :] / bend_constants[2, 1, 0]
     kappa2b2 = kappa2b ** 2
     kappa2b4 = kappa2b2 ** 2
     abs_kappa2b = np.abs(kappa2b)

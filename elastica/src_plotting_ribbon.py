@@ -116,7 +116,7 @@ def plot_3D_ribbons_from_process_solution(solution_df, solution_indices=None, n_
         )
     )
     
-    fig.write_image(save_path)
+    #fig.write_image(save_path)
     fig.show()
     return fig
 
@@ -191,7 +191,7 @@ def process_solution_file_auto(path_s):
     return solution_df.astype('float64')
 
 
-def plot_multiple_solutions(solution_dfs, labels, indices, start_color_idx=0, true_solution=None):
+def plot_multiple_solutions(solution_dfs, labels, indices, start_color_idx=0, true_solution=None, print_legend = False):
     """
     Plots the solution of various variables as subplots for multiple solution DataFrames, 
     comparing them with the true solution (if provided).
@@ -281,7 +281,8 @@ def plot_multiple_solutions(solution_dfs, labels, indices, start_color_idx=0, tr
         axs[row, col].tick_params(axis='both', labelsize=10)
 
     # Add legend to the last subplot
-    axs[-1, -1].legend(title='Legend', fontsize=10, loc='upper left')
+    if print_legend:
+        axs[-1, -1].legend(title='Legend', fontsize=10, loc='upper left')
 
     plt.tight_layout()
     plt.subplots_adjust(top=0.92)
@@ -412,7 +413,7 @@ def plot_3D_ribbons_from_process_solutions(solution_df1, solution_indices1, solu
         )
     )
     
-    fig.write_image(save_path)
+    #fig.write_image(save_path)
     fig.show()
     return fig
 
