@@ -1159,7 +1159,7 @@ def allocate_ribbon(
             [
                 alpha_c * shear_modulus * A0[i],
                 alpha_c * shear_modulus * A0[i],
-                youngs_modulus * A0[i],
+                shear_modulus*(poisson_ratio + 1.0) * A0[i],
             ],
         )
 

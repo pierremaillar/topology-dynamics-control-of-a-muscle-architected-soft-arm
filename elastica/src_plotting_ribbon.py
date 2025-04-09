@@ -440,17 +440,20 @@ def process_solution_elastica(pp_list_read, step_skip, base_length):
     rows = []
     j = 0
 
-    for t, step, pos, director, stress, couple, curvature, strains, dilatation in zip(
+    for t, step, pos, director, stress, couple, curvature, strains, dilatation, tangents in zip(
         pp_list_read["time"], pp_list_read["step"],
         pp_list_read["position"], pp_list_read["directors"],
         pp_list_read["internal_stress"], pp_list_read["internal_couple"],
-        pp_list_read["curvature"], pp_list_read["sigma"], pp_list_read["dilatation"]
+        pp_list_read["curvature"], pp_list_read["sigma"], pp_list_read["dilatation"], pp_list_read["tangents"]
     ):
         num_elements = pos.shape[1]  # Number of elements
-
         # Extend director matrix
         last_element = director[:, :, -1][:, :, np.newaxis] 
         director_extended = np.concatenate((director, last_element), axis=2)
+
+        # Extend tangents matrix
+        last_element = tangents[:, -1][:, np.newaxis] 
+        tangents_extended = np.concatenate((tangents, last_element), axis=1)
 
         # Extend couple
         last_element = couple[:, -1][:, np.newaxis] 
@@ -504,6 +507,9 @@ def process_solution_elastica(pp_list_read, step_skip, base_length):
                 'e2': strains_extended[1,i],
                 'e3': strains_extended[2,i],
                 'dilatation': dilatation_extended[i],
+                'tx': tangents_extended[0, i], 
+                'ty': tangents_extended[1, i], 
+                'tz': tangents_extended[2, i],                
             })
         j+=1
 
