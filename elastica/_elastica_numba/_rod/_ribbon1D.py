@@ -692,7 +692,7 @@ def _compute_phi_and_phiprime(
     phi_p,
 ):
     """
-    Compute phi(k2_star) and phi_p(k2_star) with respect to k2 following the piece-wise approximation 
+    Compute phi(k2) and phi_p(k2) with respect to k2 following the piece-wise approximation 
     from Audoly et al.: "A one-dimensional model for elastic ribbons: a little stretching makes a big difference."
 
     Operates on
@@ -713,7 +713,7 @@ def _compute_phi_and_phiprime(
     -------
     None (modifies phi and phi_p in place)
     """
-    kappa2b = kappa[1, :] / bend_constants[2, 1, 0]
+    kappa2b = kappa[1, :] * bend_constants[2, 1, 0]
     kappa2b2 = kappa2b ** 2
     kappa2b4 = kappa2b2 ** 2
     abs_kappa2b = np.abs(kappa2b)

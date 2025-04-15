@@ -515,3 +515,71 @@ def process_solution_elastica(pp_list_read, step_skip, base_length):
         j+=1
 
     return pd.DataFrame(rows)
+
+
+
+def _batch_norm(vector):
+    """
+    This function computes norm of a batch vector
+    Parameters
+    ----------
+    vector
+
+    Returns
+    -------
+    Notes
+    -----
+    Benchmark results, for a blocksize of 100 using timeit
+    Python einsum: 4.26 µs ± 25.9 ns per loop
+    This version: 801 ns ± 3.9 ns per loop
+    """
+    blocksize = vector.shape[1]
+    output_vector = np.empty((blocksize))
+
+    for k in range(blocksize):
+        output_vector[k] = np.sqrt(
+            vector[0, k] * vector[0, k]
+            + vector[1, k] * vector[1, k]
+            + vector[2, k] * vector[2, k]
+        )
+
+    return output_vector
+
+    
+def _batch_cross(first_vector_collection, second_vector_collection):
+    """
+    This function does cross product between two batch vectors.
+
+    Parameters
+    ----------
+    first_vector_collection
+    second_vector_collection
+
+    Returns
+    -------
+    Notes
+    ----
+    Benchmark results, for a blocksize of 100 using timeit
+    Python einsum: 14 µs ± 8.96 µs per loop
+    This version: 1.18 µs ± 141 ns per loop
+    """
+    blocksize = first_vector_collection.shape[1]
+    output_vector = np.empty((3, blocksize))
+
+    for k in range(blocksize):
+        output_vector[0, k] = (
+            first_vector_collection[1, k] * second_vector_collection[2, k]
+            - first_vector_collection[2, k] * second_vector_collection[1, k]
+        )
+
+        output_vector[1, k] = (
+            first_vector_collection[2, k] * second_vector_collection[0, k]
+            - first_vector_collection[0, k] * second_vector_collection[2, k]
+        )
+
+        output_vector[2, k] = (
+            first_vector_collection[0, k] * second_vector_collection[1, k]
+            - first_vector_collection[1, k] * second_vector_collection[0, k]
+        )
+
+    return output_vector

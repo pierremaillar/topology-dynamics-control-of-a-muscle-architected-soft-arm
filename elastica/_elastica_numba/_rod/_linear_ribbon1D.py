@@ -177,6 +177,7 @@ class LinearRibbon1D(RodBase):
         density,
         nu,
         youngs_modulus,
+        shear_modulus,
         poisson_ratio,
         alpha_c=4.0/3.0,
         *args,
@@ -236,8 +237,9 @@ class LinearRibbon1D(RodBase):
             density,
             nu,
             youngs_modulus,
+            shear_modulus,
             poisson_ratio,
-            alpha_c=12.0,
+            alpha_c=4.0/3.0,
             *args,
             **kwargs,
         )
