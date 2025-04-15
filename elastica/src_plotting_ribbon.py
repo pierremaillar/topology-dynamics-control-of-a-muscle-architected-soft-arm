@@ -52,7 +52,9 @@ def plot_3D_ribbons_from_process_solution(solution_df, solution_indices=None, n_
 
         min_index = min(solution_indices)
         max_index = max(solution_indices)
-        opacity = 0.1 + 0.89 * (index - min_index) / (max_index - min_index)
+        if len(solution_indices) == 1:
+            opacity = 1
+        else: opacity = 0.2 + 0.8 * (index - min_index) / (max_index - min_index)
 
         for i in range(len(one_solution)):
             x, y, z = one_solution.iloc[i][['X', 'Y', 'Z']]
@@ -229,8 +231,8 @@ def plot_multiple_solutions(solution_dfs, labels, indices, start_color_idx=0, tr
     """
     num_solutions = len(solution_dfs)
     
-    fig, axs = plt.subplots(4, 3, figsize=(15, 12))
-    fig.suptitle('Comparison of Multiple Solutions', fontsize=16)
+    fig, axs = plt.subplots(2, 3, figsize=(12, 8))
+    fig.suptitle('Coordinates along centerline', fontsize=16)
 
     variables = [
         ('X', 'X Position'),
@@ -239,12 +241,9 @@ def plot_multiple_solutions(solution_dfs, labels, indices, start_color_idx=0, tr
         ('R1', 'R1'),
         ('R2', 'R2'),
         ('R3', 'R3'),
-        ('m1', 'm1'),
-        ('m2', 'm2'),
-        ('m3', 'm3'),
-        ('k1', 'k1'),
-        ('k2', 'k2'),
-        ('k3', 'k3')
+#        ('m1', 'm1'),
+#        ('m2', 'm2'),
+#        ('m3', 'm3'),
     ]
 
     # Define colormaps and choose starting colormap based on start_color_idx
@@ -259,15 +258,21 @@ def plot_multiple_solutions(solution_dfs, labels, indices, start_color_idx=0, tr
         axs[row, col].grid(True)
 
         # Plot each solution DataFrame
-        for j, (df, label) in enumerate(zip(solution_dfs, labels)):
-            for k, index_solution in enumerate(indices):
+        for j, (df, label, index_solutions) in enumerate(zip(solution_dfs, labels, indices)):
+            for k, index_solution in enumerate(index_solutions):
                 selected_df = df[df['Index_solution'] == index_solution].reset_index()
                 color = colors[j][k]  # Assign color based on solution set and index
-                
-                axs[row, col].plot(
-                    selected_df['s'], selected_df[var],
-                    color=color, linestyle='-', label=f'{label} (Index {index_solution})'
-                )
+
+                if k !=0:
+                    axs[row, col].plot(
+                        selected_df['s'], selected_df[var],
+                        color=color, linestyle='-', label=f'{label}'
+                    )
+                else:
+                    axs[row, col].plot(
+                        selected_df['s'], selected_df[var],
+                        color=color, linestyle='-'
+                    )
 
         # Plot true solution if available
         if true_solution is not None:
@@ -277,19 +282,20 @@ def plot_multiple_solutions(solution_dfs, labels, indices, start_color_idx=0, tr
             )
 
         axs[row, col].set_ylabel(title, fontsize=12)
+        axs[row, col].set_xlabel('s', fontsize=12)
         axs[row, col].set_title(title, fontsize=14)
         axs[row, col].tick_params(axis='both', labelsize=10)
 
     # Add legend to the last subplot
     if print_legend:
-        axs[-1, -1].legend(title='Legend', fontsize=10, loc='upper left')
+        axs[0, -1].legend(title='Legend', fontsize=10, loc='upper left')
 
     plt.tight_layout()
-    plt.subplots_adjust(top=0.92)
+    plt.subplots_adjust(top=0.90)
     plt.show()
 
 
-def plot_3D_ribbons_from_process_solutions(solution_df1, solution_indices1, solution_df2, solution_indices2, 
+def plot_3D_ribbons_from_process_solutions(solution_df1, solution_indices1, solution_df2, solution_indices2,  color_df1 = 'viridis', color_df2 = 'Plasma',
                                            n_points=20, half_width=0.1, n_arrows=10, save_path="figure/3D_ribbons.png"):
     """
     Plots 3D ribbon structures from two different partitioned solution files using Plotly.
@@ -335,7 +341,7 @@ def plot_3D_ribbons_from_process_solutions(solution_df1, solution_indices1, solu
     fig = go.Figure()
 
     # Define colormaps and opacity scaling
-    datasets = [(solution_df1, solution_indices1, 'Viridis'), (solution_df2, solution_indices2, 'Plasma')]
+    datasets = [(solution_df1, solution_indices1, color_df1), (solution_df2, solution_indices2, color_df2)]
     
     for solution_df, solution_indices, colormap in datasets:
         min_index = min(solution_indices)
@@ -345,7 +351,10 @@ def plot_3D_ribbons_from_process_solutions(solution_df1, solution_indices1, solu
             one_solution = solution_df[solution_df['Index_solution'] == index]
 
             X_surf, Y_surf, Z_surf, colors = [], [], [], []
-            opacity = 0.2 + 0.8 * (index - min_index) / (max_index - min_index)
+            
+            if len(solution_indices) == 1:
+                opacity = 1
+            else: opacity = 0.2 + 0.8 * (index - min_index) / (max_index - min_index)
 
             for i in range(len(one_solution)):
                 x, y, z = one_solution.iloc[i][['X', 'Y', 'Z']]
@@ -400,7 +409,7 @@ def plot_3D_ribbons_from_process_solutions(solution_df1, solution_indices1, solu
             ))
 
     fig.update_layout(
-        title="3D Ribbon Comparison from Two Datasets",
+        #title="3D Ribbon Comparison from Two Datasets",
         scene=dict(
             xaxis_title='X',
             yaxis_title='Y',
