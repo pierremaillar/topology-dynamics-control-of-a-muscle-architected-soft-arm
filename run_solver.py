@@ -10,6 +10,7 @@ from Cases.arm_function import(
     DampingFilterBCRingRod,)
 
 from elastica._linalg import _batch_norm
+from elastica._linalg import _batch_cross
 
 from Cases.post_processing import (plot_video_with_surface,plot_video_activation_muscle,)
 
@@ -27,8 +28,7 @@ from collections import defaultdict
 from matplotlib import pyplot as plt
 import matplotlib.cm as cm
 from elastica.src_plotting_ribbon import *
-from elastica.src_plotting_ribbon import _batch_cross
-from elastica.src_plotting_ribbon import _batch_norm
+
 
 
 class LinearRod(BaseSystemCollection, Constraints, MemoryBlockConnections, Forcing, CallBacks):
@@ -197,7 +197,7 @@ Rod.finalize()
 print("System finalized")
 
 #######################################
-final_time = 5.0
+final_time = 0.1
 #######################################
 total_steps = int(final_time / dt)
 print("Total steps to take", total_steps)
