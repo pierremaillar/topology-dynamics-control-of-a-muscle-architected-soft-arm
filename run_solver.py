@@ -14,7 +14,6 @@ from elastica._linalg import _batch_cross
 
 from Cases.post_processing import (plot_video_with_surface,plot_video_activation_muscle,)
 
-import os
 from elastica._rotations import _get_rotation_matrix
 
 from itertools import groupby
@@ -37,7 +36,7 @@ class LinearRod(BaseSystemCollection, Constraints, MemoryBlockConnections, Forci
 
 Rod = LinearRod()
 
-n_elem = 100
+n_elem = 10
 
 
 start = np.array([0.0, 0.0, 0.0])
@@ -53,7 +52,7 @@ density = 1.017e-7
 nu = 2e-6
 #######################################
 E = 2.77e1
-num_lagrange = 1e1
+num_lagrange = 2e2
 poisson_ratio = 0.34
 
 dt = 1.0e-6
@@ -168,13 +167,7 @@ class RodCallBack(CallBackBaseClass):
             self.callback_params["time"].append(time)
             self.callback_params["step"].append(current_step)
             self.callback_params["position"].append(system.position_collection.copy())
-#            self.callback_params["velocity"].append(system.velocity_collection.copy())
-#            self.callback_params["avg_velocity"].append(
-#                system.compute_velocity_center_of_mass()
-#            )
-#            self.callback_params["center_of_mass"].append(
-#                system.compute_position_center_of_mass()
-#            )
+            self.callback_params["velocity"].append(system.velocity_collection.copy())
             self.callback_params["curvature"].append(system.kappa.copy())
             self.callback_params["sigma"].append(system.sigma.copy())
             self.callback_params["internal_stress"].append(system.internal_stress.copy())
@@ -186,7 +179,7 @@ class RodCallBack(CallBackBaseClass):
             
             return
 
-step_skip=10000
+step_skip=100
 pp_list = defaultdict(list)
 Rod.collect_diagnostics(shearable_rod).using(
     RodCallBack, step_skip=step_skip, callback_params=pp_list
@@ -197,15 +190,14 @@ Rod.finalize()
 print("System finalized")
 
 #######################################
-final_time = 0.1
+final_time = 0.05
 #######################################
 total_steps = int(final_time / dt)
 print("Total steps to take", total_steps)
 
 timestepper = PositionVerlet()
-
-
 integrate(timestepper, Rod, final_time, total_steps, adaptive_time_step = False, error_tolerance=1e-5)
+
 
 positions_over_time = np.array(pp_list["position"])
 if (np.isnan(positions_over_time)==False).all()==False:
@@ -214,3 +206,16 @@ if (np.isnan(positions_over_time)==False).all()==False:
 
 with open("simulation_data.pickle", 'wb') as handle:
     pickle.dump(pp_list, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+with open("simulation_data.pickle", 'rb') as handle:
+    pp_list_read = pickle.load(handle)
+
+solution_1 = process_solution_elastica(pp_list_read, step_skip=step_skip, base_length=base_length)
+
+
+plot_multiple_solutions(
+    solution_dfs=[solution_1],
+    labels=["Linear Ribbon"],
+    indices=np.linspace(1,solution_1.Index_solution.max(),50,dtype=np.int64),
+    save_path="figure/run1.png" 
+)

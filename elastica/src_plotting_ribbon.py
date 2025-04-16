@@ -5,6 +5,7 @@ from collections import defaultdict
 from matplotlib import pyplot as plt
 import matplotlib.cm as cm
 import math
+import os
 
 
 def plot_3D_ribbons_from_process_solution(solution_df, solution_indices=None, n_points=20, half_width=0.1, n_arrows = 10, save_path="figure/3D_ribbons.png"):
@@ -194,7 +195,15 @@ def process_solution_file_auto(path_s):
     return solution_df.astype('float64')
 
 
-def plot_multiple_solutions(solution_dfs, labels, indices, start_color_idx=0, true_solution=None, print_legend = False, variables = [
+
+def plot_multiple_solutions(
+    solution_dfs, 
+    labels, 
+    indices, 
+    start_color_idx=0, 
+    true_solution=None, 
+    print_legend=False,
+    variables=[
         ('X', 'X Position'),
         ('Y', 'Y Position'),
         ('Z', 'Z Position'),
@@ -204,44 +213,55 @@ def plot_multiple_solutions(solution_dfs, labels, indices, start_color_idx=0, tr
         ('V1', 'V1'),
         ('V2', 'V2'),
         ('V3', 'V3'),
-    ]):
+    ],
+    save_path=None
+):
     """
-    Plots the solution of various variables as subplots for multiple solution DataFrames, 
-    comparing them with the true solution (if provided).
+    Plot multiple ribbon simulation solutions as subplots.
 
-    Parameters:
-    -----------
+    This function generates subplots for each specified variable (`X`, `Y`, `Z`, `R1`, etc.)
+    for one or more solution datasets. Each variable is plotted as a function of arc-length `s`
+    for a set of selected simulation frames (`Index_solution` values). The plots can also include
+    a reference "true" solution for visual comparison.
+
+    Parameters
+    ----------
     solution_dfs : list of pandas.DataFrame
-        A list of DataFrames containing the solution data. Each DataFrame should have 
-        columns: 'Index_solution', 'X', 'Y', 'Z', 'R1', 'R2', 'R3', 'm1', 'm2', 'm3', 'k1', 'k2', 'k3', 's'.
-    
+        A list of DataFrames, each representing a full simulation solution. Each DataFrame should
+        contain columns such as: 'Index_solution', 's', 'X', 'Y', 'Z', 'R1', 'R2', 'R3', 'V1', 'V2', 'V3'.
+
     labels : list of str
-        Labels corresponding to each solution DataFrame (for legend purposes).
-    
-    indices : list of int
-        A list of indices corresponding to different solutions that need to be plotted.
+        Labels for each solution in `solution_dfs`, used in the plot legend.
+
+    indices : list or array-like of int
+        Frame indices (`Index_solution`) to plot from each solution DataFrame.
 
     start_color_idx : int, optional (default=0)
-        An integer defining the starting color index for the colormap.
-        Different numbers will shift the color scheme.
+        Index to shift the base colormap for the solutions. Useful for differentiating plot sets
+        when calling this function multiple times.
 
     true_solution : pandas.DataFrame, optional
-        A DataFrame containing the true solution values for the same variables. 
-        If provided, it is plotted for comparison.
+        A reference solution DataFrame with the same variables. If provided, it is plotted as a
+        dashed red line for comparison.
 
-    Returns:
-    --------
+    print_legend : bool, optional (default=False)
+        Whether to include a legend in the plot. Only shown in the top-right subplot.
+
+    variables : list of tuple, optional
+        A list of (column_name, display_name) pairs representing the variables to plot and their
+        corresponding y-axis labels.
+
+    save_path : str or None, optional
+        If provided, saves the resulting plot to the specified file path. The file format is
+        inferred from the extension (e.g., .png, .pdf). If None, the plot is displayed instead.
+
+    Returns
+    -------
     None
-        Displays the plots for the given solutions.
-    
-    Notes:
-    ------
-    - Generates subplots for 12 variables: 'X', 'Y', 'Z', 'R1', 'R2', 'R3', 'm1', 'm2', 'm3', 'k1', 'k2', 'k3'.
-    - Each subplot compares the values for different solutions.
-    - The true solution (if provided) is plotted in red as a dashed line.
+        Displays the plot or saves it to a file.
     """
-    num_solutions = len(solution_dfs)
 
+    num_solutions = len(solution_dfs)
 
     num_vars = len(variables)
     ncols = math.ceil(math.sqrt(num_vars))
@@ -251,35 +271,23 @@ def plot_multiple_solutions(solution_dfs, labels, indices, start_color_idx=0, tr
 
     fig, axs = plt.subplots(nrows, ncols, figsize=(fig_width, fig_height))
 
-    # Define colormaps and choose starting colormap based on start_color_idx
     colormaps = [cm.Blues, cm.Oranges, cm.Greens, cm.Purples, cm.Reds, cm.Greys]
-    colormap = colormaps[start_color_idx % len(colormaps)]  # Select colormap based on index
-    
-    # Generate color gradients for each solution set
+    colormap = colormaps[start_color_idx % len(colormaps)]
     colors = [colormaps[i % len(colormaps)](np.linspace(0.3, 1, len(indices))) for i in range(num_solutions)]
 
     for i, (var, title) in enumerate(variables):
         row, col = divmod(i, 3)
         axs[row, col].grid(True)
 
-        # Plot each solution DataFrame
         for j, (df, label) in enumerate(zip(solution_dfs, labels)):
             for k, index_solution in enumerate(indices):
                 selected_df = df[df['Index_solution'] == index_solution].reset_index()
-                color = colors[j][k]  # Assign color based on solution set and index
+                color = colors[j][k]
+                axs[row, col].plot(
+                    selected_df['s'], selected_df[var],
+                    color=color, linestyle='-', label=label if k == 0 else ""
+                )
 
-                if k !=0:
-                    axs[row, col].plot(
-                        selected_df['s'], selected_df[var],
-                        color=color, linestyle='-', label=f'{label}'
-                    )
-                else:
-                    axs[row, col].plot(
-                        selected_df['s'], selected_df[var],
-                        color=color, linestyle='-'
-                    )
-
-        # Plot true solution if available
         if true_solution is not None:
             axs[row, col].plot(
                 true_solution['s'], true_solution[var],
@@ -291,13 +299,19 @@ def plot_multiple_solutions(solution_dfs, labels, indices, start_color_idx=0, tr
         axs[row, col].set_title(title, fontsize=14)
         axs[row, col].tick_params(axis='both', labelsize=10)
 
-    # Add legend to the last subplot
     if print_legend:
         axs[0, -1].legend(title='Legend', fontsize=10, loc='upper left')
 
     plt.tight_layout()
     plt.subplots_adjust(top=0.90)
-    plt.show()
+
+    # Save or show
+    if save_path is not None:
+        fig.savefig(save_path, bbox_inches='tight', dpi=300)
+        print(f"Plot saved to: {save_path}")
+        plt.close(fig) 
+    else:
+        plt.show()
 
 
 def plot_3D_ribbons_from_process_solutions(solution_df1, solution_indices1, solution_df2, solution_indices2,  color_df1 = 'viridis', color_df2 = 'Plasma',
