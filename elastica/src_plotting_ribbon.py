@@ -4,6 +4,7 @@ import pandas as pd
 from collections import defaultdict
 from matplotlib import pyplot as plt
 import matplotlib.cm as cm
+import math
 
 
 def plot_3D_ribbons_from_process_solution(solution_df, solution_indices=None, n_points=20, half_width=0.1, n_arrows = 10, save_path="figure/3D_ribbons.png"):
@@ -193,7 +194,17 @@ def process_solution_file_auto(path_s):
     return solution_df.astype('float64')
 
 
-def plot_multiple_solutions(solution_dfs, labels, indices, start_color_idx=0, true_solution=None, print_legend = False):
+def plot_multiple_solutions(solution_dfs, labels, indices, start_color_idx=0, true_solution=None, print_legend = False, variables = [
+        ('X', 'X Position'),
+        ('Y', 'Y Position'),
+        ('Z', 'Z Position'),
+        ('R1', 'R1'),
+        ('R2', 'R2'),
+        ('R3', 'R3'),
+        ('V1', 'V1'),
+        ('V2', 'V2'),
+        ('V3', 'V3'),
+    ]):
     """
     Plots the solution of various variables as subplots for multiple solution DataFrames, 
     comparing them with the true solution (if provided).
@@ -230,21 +241,15 @@ def plot_multiple_solutions(solution_dfs, labels, indices, start_color_idx=0, tr
     - The true solution (if provided) is plotted in red as a dashed line.
     """
     num_solutions = len(solution_dfs)
-    
-    fig, axs = plt.subplots(2, 3, figsize=(12, 8))
-    fig.suptitle('Coordinates along centerline', fontsize=16)
 
-    variables = [
-        ('X', 'X Position'),
-        ('Y', 'Y Position'),
-        ('Z', 'Z Position'),
-        ('R1', 'R1'),
-        ('R2', 'R2'),
-        ('R3', 'R3'),
-#        ('m1', 'm1'),
-#        ('m2', 'm2'),
-#        ('m3', 'm3'),
-    ]
+
+    num_vars = len(variables)
+    ncols = math.ceil(math.sqrt(num_vars))
+    nrows = math.ceil(num_vars / ncols)
+    fig_width = ncols * 4
+    fig_height = nrows * 3
+
+    fig, axs = plt.subplots(nrows, ncols, figsize=(fig_width, fig_height))
 
     # Define colormaps and choose starting colormap based on start_color_idx
     colormaps = [cm.Blues, cm.Oranges, cm.Greens, cm.Purples, cm.Reds, cm.Greys]
@@ -258,8 +263,8 @@ def plot_multiple_solutions(solution_dfs, labels, indices, start_color_idx=0, tr
         axs[row, col].grid(True)
 
         # Plot each solution DataFrame
-        for j, (df, label, index_solutions) in enumerate(zip(solution_dfs, labels, indices)):
-            for k, index_solution in enumerate(index_solutions):
+        for j, (df, label) in enumerate(zip(solution_dfs, labels)):
+            for k, index_solution in enumerate(indices):
                 selected_df = df[df['Index_solution'] == index_solution].reset_index()
                 color = colors[j][k]  # Assign color based on solution set and index
 
@@ -450,11 +455,11 @@ def process_solution_elastica(pp_list_read, step_skip, base_length):
     rows = []
     j = 0
 
-    for t, step, pos, director, stress, couple, curvature, strains, dilatation, tangents in zip(
+    for t, step, pos, director, stress, couple, curvature, strains, dilatation, tangents, velocities in zip(
         pp_list_read["time"], pp_list_read["step"],
         pp_list_read["position"], pp_list_read["directors"],
         pp_list_read["internal_stress"], pp_list_read["internal_couple"],
-        pp_list_read["curvature"], pp_list_read["sigma"], pp_list_read["dilatation"], pp_list_read["tangents"]
+        pp_list_read["curvature"], pp_list_read["sigma"], pp_list_read["dilatation"], pp_list_read["tangents"], pp_list_read["velocity"]
     ):
         num_elements = pos.shape[1]  # Number of elements
         # Extend director matrix
@@ -519,76 +524,13 @@ def process_solution_elastica(pp_list_read, step_skip, base_length):
                 'dilatation': dilatation_extended[i],
                 'tx': tangents_extended[0, i], 
                 'ty': tangents_extended[1, i], 
-                'tz': tangents_extended[2, i],                
+                'tz': tangents_extended[2, i],
+                'V1' :velocities[0,i],
+                'V2' :velocities[1,i],
+                'V3' :velocities[2,i]
             })
         j+=1
 
     return pd.DataFrame(rows)
 
 
-
-def _batch_norm(vector):
-    """
-    This function computes norm of a batch vector
-    Parameters
-    ----------
-    vector
-
-    Returns
-    -------
-    Notes
-    -----
-    Benchmark results, for a blocksize of 100 using timeit
-    Python einsum: 4.26 µs ± 25.9 ns per loop
-    This version: 801 ns ± 3.9 ns per loop
-    """
-    blocksize = vector.shape[1]
-    output_vector = np.empty((blocksize))
-
-    for k in range(blocksize):
-        output_vector[k] = np.sqrt(
-            vector[0, k] * vector[0, k]
-            + vector[1, k] * vector[1, k]
-            + vector[2, k] * vector[2, k]
-        )
-
-    return output_vector
-
-    
-def _batch_cross(first_vector_collection, second_vector_collection):
-    """
-    This function does cross product between two batch vectors.
-
-    Parameters
-    ----------
-    first_vector_collection
-    second_vector_collection
-
-    Returns
-    -------
-    Notes
-    ----
-    Benchmark results, for a blocksize of 100 using timeit
-    Python einsum: 14 µs ± 8.96 µs per loop
-    This version: 1.18 µs ± 141 ns per loop
-    """
-    blocksize = first_vector_collection.shape[1]
-    output_vector = np.empty((3, blocksize))
-
-    for k in range(blocksize):
-        output_vector[0, k] = (
-            first_vector_collection[1, k] * second_vector_collection[2, k]
-            - first_vector_collection[2, k] * second_vector_collection[1, k]
-        )
-
-        output_vector[1, k] = (
-            first_vector_collection[2, k] * second_vector_collection[0, k]
-            - first_vector_collection[0, k] * second_vector_collection[2, k]
-        )
-
-        output_vector[2, k] = (
-            first_vector_collection[0, k] * second_vector_collection[1, k]
-            - first_vector_collection[1, k] * second_vector_collection[0, k]
-        )
-
-    return output_vector
