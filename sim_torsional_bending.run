@@ -1,0 +1,10 @@
+#!/bin/bash -l
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --time=0:10:00
+#SBATCH --cpus-per-task 32
+#SBATCH --output=result/output.txt
+#SBATCH --error=result/error.txt
+
+python run_solver.py
+
