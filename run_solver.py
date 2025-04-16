@@ -179,7 +179,7 @@ class RodCallBack(CallBackBaseClass):
             
             return
 
-step_skip=100
+step_skip=10000
 pp_list = defaultdict(list)
 Rod.collect_diagnostics(shearable_rod).using(
     RodCallBack, step_skip=step_skip, callback_params=pp_list
@@ -190,7 +190,7 @@ Rod.finalize()
 print("System finalized")
 
 #######################################
-final_time = 0.05
+final_time = 5.0
 #######################################
 total_steps = int(final_time / dt)
 print("Total steps to take", total_steps)
